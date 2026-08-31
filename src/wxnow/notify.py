@@ -59,7 +59,7 @@ def evaluate(snap: Snapshot, cfg: Config) -> list[Trip]:
     need = rank.get(sev, 3) if sev else 3
     for a in snap.alerts:
         if rank.get((a.severity or "").lower(), 0) >= need:
-            trips.append(Trip(f"alert:{a.event}", f"wxnow {a.event}", a.headline or a.event))
+            trips.append(Trip(f"alert:{a.id or a.event}", f"wxnow {a.event}", a.headline or a.event))
     prev = _load_state()
     new = [t for t in trips if t.key not in prev]
     _save_state({t.key for t in trips})

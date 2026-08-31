@@ -11,7 +11,7 @@ from textual.theme import Theme
 from textual.widgets import Footer, Static
 
 from wxnow.config import Config, save_config
-from wxnow.engine import adaptive_refresh, fetch_snapshot
+from wxnow.engine import adaptive_refresh, fetch_snapshot, primary_candidates
 from wxnow.format import clock, copy_summary
 from wxnow.http import Http
 from wxnow.cache import DiskCache
@@ -298,7 +298,9 @@ class WxNowApp(App):
     def action_cycle_source(self) -> None:
         if not self.snap or not self.snap.observations:
             return
-        ids = [o.source_id for o in self.snap.observations]
+        ids = [o.source_id for o in primary_candidates(self.snap.observations)]
+        if not ids:
+            return
         cur = self.snap.primary_id or ids[0]
         nxt = ids[(ids.index(cur) + 1) % len(ids)] if cur in ids else ids[0]
         self.snap.primary_id = nxt

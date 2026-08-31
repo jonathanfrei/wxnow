@@ -24,17 +24,17 @@ THRESHOLDS = {
 
 
 def pick_primary(obs: list[Observation], preferred: str) -> str | None:
-    by_id = {o.source_id: o for o in obs}
-    if preferred in by_id and _usable(by_id[preferred]):
+    candidates = primary_candidates(obs)
+    by_id = {o.source_id: o for o in candidates}
+    if preferred in by_id:
         return preferred
     chain = ["metar", "nws", "open-meteo"]
     for sid in chain:
         o = by_id.get(sid)
-        if o and _usable(o):
+        if o:
             return sid
-    for o in obs:
-        if _usable(o):
-            return o.source_id
+    if candidates:
+        return candidates[0].source_id
     return None
 
 
@@ -46,6 +46,10 @@ def _usable(o: Observation) -> bool:
     if o.distance_km is not None and o.distance_km > NEAR_KM:
         return False
     return True
+
+
+def primary_candidates(obs: list[Observation]) -> list[Observation]:
+    return [o for o in obs if _usable(o)]
 
 
 def compute_spreads(obs: list[Observation]) -> list[Spread]:
@@ -197,24 +201,23 @@ async def fetch_snapshot(
             await http.aclose()
 
 
-def _dedupe_alerts(alerts: list) -> list:
-    seen: set[str] = set()
+def _dedupe_alerts(alerts: list[Alert]) -> list[Alert]:
+    seen: set[tuple] = set()
     out = []
     for a in alerts:
-        key = (a.event or "") + "|" + (a.headline or "")[:40]
+        key = (
+            ("id", a.source, a.id)
+            if a.id
+            else (
+                "content", a.source, a.event, a.headline, a.severity, a.urgency,
+                a.onset, a.ends, a.description, a.instruction,
+            )
+        )
         if key in seen:
             continue
         seen.add(key)
         out.append(a)
-    # still collapse identical event names if one is a strict duplicate
-    events: set[str] = set()
-    uniq = []
-    for a in out:
-        if a.event in events and a.event:
-            continue
-        events.add(a.event)
-        uniq.append(a)
-    return uniq
+    return out
 
 
 async def fetch_mosaic(

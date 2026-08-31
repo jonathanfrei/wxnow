@@ -29,9 +29,11 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
         "sun": {"alt_deg": snap.sun_alt_deg, "az_deg": snap.sun_az_deg},
         "alerts": [
             {
+                "id": a.id,
                 "event": a.event,
                 "headline": a.headline,
                 "severity": a.severity,
+                "onset": a.onset.isoformat() if a.onset else None,
                 "ends": a.ends.isoformat() if a.ends else None,
                 "source": a.source,
                 "contains_pin": a.contains_pin,

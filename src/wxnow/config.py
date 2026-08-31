@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -115,11 +116,22 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
     if disp.get("line"):
         cfg.line_format = str(disp["line"])
     if "gust_kt" in ntf:
-        cfg.notify_gust_kt = float(ntf["gust_kt"]) if ntf["gust_kt"] is not None else None
+        cfg.notify_gust_kt = _threshold(ntf["gust_kt"], "notify.gust_kt")
     if "aqi" in ntf:
-        cfg.notify_aqi = float(ntf["aqi"]) if ntf["aqi"] is not None else None
+        cfg.notify_aqi = _threshold(ntf["aqi"], "notify.aqi")
     if ntf.get("alert_severity"):
         cfg.notify_alert_severity = str(ntf["alert_severity"]).lower()
+
+
+def _threshold(value: Any, name: str) -> float | None:
+    if value is False or value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number or false")
+    threshold = float(value)
+    if not isfinite(threshold) or threshold < 0:
+        raise ValueError(f"{name} must be a finite, non-negative number")
+    return threshold
 
 
 def save_config(cfg: Config) -> None:
@@ -195,7 +207,7 @@ line = "plain"            # plain | waybar | tmux
 show_raw = true
 
 [notify]
-gust_kt = 40
-aqi = 150
+gust_kt = 40               # false disables gust notifications
+aqi = 150                  # false disables AQI notifications
 alert_severity = "severe"
 """
