@@ -127,7 +127,9 @@ async def fetch_snapshot(
                 tide = val
                 continue
             if isinstance(val, Observation):
-                val.stale = is_stale(val.observed_at, now, val.kind)
+                val.stale = val.stale or is_stale(val.observed_at, now, val.kind)
+                if "stale cache" in val.quality_flags:
+                    warnings.append(f"{p.id}: showing stale cached data")
                 obs.append(val)
 
         alerts = _dedupe_alerts(alert_rows)
@@ -170,7 +172,8 @@ async def fetch_snapshot(
         except Exception:
             pass
 
-        ok = sum(1 for o in obs if not o.error)
+        failed = sum(1 for value in results.values() if isinstance(value, Exception))
+        ok = sum(1 for value in results.values() if value is not None and not isinstance(value, Exception))
         return Snapshot(
             pin=pin,
             fetched_at=now,
@@ -181,7 +184,7 @@ async def fetch_snapshot(
             sun_az_deg=sun_az,
             warnings=warnings,
             sources_ok=ok,
-            sources_total=max(len(obs), ok),
+            sources_total=ok + failed,
             spreads=spreads,
             offline=offline,
             fill=dict(cfg.fill),

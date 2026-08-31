@@ -49,15 +49,7 @@ def enabled(cfg: Config) -> list[Plugin]:
         load_builtin()
     out: list[Plugin] = []
     seen: set[str] = set()
-    names = list(cfg.enabled)
-    if "nws" in names and "nws-alerts" not in names:
-        names.append("nws-alerts")
-    if "open-meteo" in names and "open-meteo-aq" not in names:
-        names.append("open-meteo-aq")
-    for extra in ("radar", "tides", "buoy"):
-        if extra not in names:
-            names.append(extra)
-    for sid in names:
+    for sid in cfg.enabled:
         p = _PLUGINS.get(sid)
         if p is None or sid in seen:
             continue

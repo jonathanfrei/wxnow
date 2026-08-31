@@ -49,19 +49,45 @@ def _parse_om_time(s: str | None, tz_name: str | None) -> datetime | None:
     return dt
 
 
+def _pressure_change_3h(
+    hourly: dict, current_at: datetime | None, current_hpa: float | int | None, tz_name: str | None,
+) -> float | None:
+    if current_at is None or current_hpa is None:
+        return None
+    times = hourly.get("time") or []
+    pressures = hourly.get("pressure_msl") or []
+    target = current_at.timestamp() - 3 * 3600
+    candidates: list[tuple[float, float]] = []
+    for raw_time, raw_pressure in zip(times, pressures):
+        at = _parse_om_time(raw_time, tz_name)
+        if at is None or at > current_at:
+            continue
+        try:
+            candidates.append((abs(at.timestamp() - target), float(raw_pressure)))
+        except (TypeError, ValueError):
+            continue
+    if not candidates:
+        return None
+    distance, past_hpa = min(candidates)
+    if distance > 90 * 60:
+        return None
+    return float(current_hpa) - past_hpa
+
+
 async def fetch_open_meteo(pin: Pin, http: Http) -> Observation | None:
-    fetched_at = datetime.now(timezone.utc)
+    requested_at = datetime.now(timezone.utc)
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={pin.lat:.4f}&longitude={pin.lon:.4f}"
         f"&current={CURRENT_VARS}"
         "&hourly=temperature_2m,precipitation,pressure_msl"
-        "&past_hours=6&forecast_hours=1"
+        "&past_hours=4&forecast_hours=0"
         "&timezone=auto&wind_speed_unit=ms&precipitation_unit=mm"
     )
     r = await http.get_json(url, ttl=180)
     if not isinstance(r.body, dict) or "current" not in r.body:
         return None
+    fetched_at = r.cache_fetched_at or requested_at
     body = r.body
     cur = body["current"]
     tz = body.get("timezone")
@@ -105,17 +131,11 @@ async def fetch_open_meteo(pin: Pin, http: Http) -> Observation | None:
         if cvr != "CLR":
             clouds.append(CloudLayer(cover=cvr, base_ft=None))
 
-    # pressure tendency from hourly model — labeled as model, not obs history
+    observed = _parse_om_time(cur.get("time"), tz)
+    # Pressure tendency is historical model context only, never forecast data.
     hourly = body.get("hourly") or {}
-    h_press = hourly.get("pressure_msl") or []
-    tend = None
-    tchg = None
-    if len(h_press) >= 2:
-        try:
-            tchg = float(h_press[-1]) - float(h_press[0])
-            tend = pressure_tendency_label(tchg / max(1, len(h_press) - 1) * 3, None)
-        except (TypeError, ValueError):
-            pass
+    tchg = _pressure_change_3h(hourly, observed, slp, tz)
+    tend = pressure_tendency_label(tchg, None) if tchg is not None else None
 
     grid_lat = float(body.get("latitude", pin.lat))
     grid_lon = float(body.get("longitude", pin.lon))
@@ -125,7 +145,6 @@ async def fetch_open_meteo(pin: Pin, http: Http) -> Observation | None:
     if elev is not None and pin.elevation_m is not None:
         elev_delta = float(elev) - pin.elevation_m
 
-    observed = _parse_om_time(cur.get("time"), tz)
     altim = None if slp is None else float(slp) * 0.0295299830714
 
     station = Station(
@@ -175,10 +194,11 @@ async def fetch_open_meteo(pin: Pin, http: Http) -> Observation | None:
         precip_mm=None if precip is None else float(precip),
         precip_rate_mmh=None if precip is None else float(precip),  # current interval ~15 min; treat as rate-ish
         raw_payload=cur,
-        quality_flags=["model", "nowcast"],
+        quality_flags=["model", "nowcast"] + (["stale cache"] if r.stale else []),
         distance_km=dist,
         elev_delta_m=elev_delta,
         bearing=brg,
+        stale=r.stale,
     )
 
 
@@ -210,7 +230,7 @@ def _dominant(pm25: float | None, pm10: float | None, o3: float | None, no2: flo
 
 
 async def fetch_air_quality(pin: Pin, http: Http) -> Observation | None:
-    fetched_at = datetime.now(timezone.utc)
+    requested_at = datetime.now(timezone.utc)
     url = (
         "https://air-quality-api.open-meteo.com/v1/air-quality"
         f"?latitude={pin.lat:.4f}&longitude={pin.lon:.4f}"
@@ -219,6 +239,7 @@ async def fetch_air_quality(pin: Pin, http: Http) -> Observation | None:
     r = await http.get_json(url, ttl=300)
     if not isinstance(r.body, dict) or "current" not in r.body:
         return None
+    fetched_at = r.cache_fetched_at or requested_at
     cur = r.body["current"]
     aqi = _f(cur.get("us_aqi"))
     pm25 = _f(cur.get("pm2_5"))
@@ -257,7 +278,8 @@ async def fetch_air_quality(pin: Pin, http: Http) -> Observation | None:
         so2=_f(cur.get("sulphur_dioxide")),
         uv_index=uv,
         raw_payload=cur,
-        quality_flags=["model", "nowcast", "air"],
+        quality_flags=["model", "nowcast", "air"] + (["stale cache"] if r.stale else []),
         distance_km=haversine_km(pin.lat, pin.lon, grid_lat, grid_lon),
         condition=_dominant(pm25, pm10, o3, no2),
+        stale=r.stale,
     )

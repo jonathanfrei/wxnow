@@ -12,7 +12,10 @@ from wxnow.http import DEFAULT_UA
 from wxnow.units import Units
 
 
-DEFAULT_ENABLED = ["metar", "nws", "open-meteo", "open-meteo-aq"]
+DEFAULT_ENABLED = [
+    "metar", "nws", "nws-alerts", "open-meteo", "open-meteo-aq",
+    "radar", "tides", "buoy",
+]
 
 
 @dataclass
@@ -180,7 +183,7 @@ favorites = ["KTUL", "KBOS"]
 
 [sources]
 primary = "metar"
-enabled = ["nws", "metar", "open-meteo", "open-meteo-aq"]
+enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy"]
 fill = { aqi = "open-meteo-aq", uv = "open-meteo-aq" }
 # keys = { pirate = "…", weatherapi = "…" }
 

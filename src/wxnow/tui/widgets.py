@@ -62,7 +62,7 @@ def header_line(snap: Snapshot, now_local_s: str | None = None) -> str:
     live = f"[{GREEN}]● LIVE[/]" if not snap.offline else f"[{AMBER}]● OFFLINE[/]"
     return (
         f"[bold {INK}]{pin.name.upper()}[/]  {muted(f'{coords(pin.lat, pin.lon)}  {when}{guess}')}"
-        f"          {live}  {muted('·  ' + str(snap.sources_ok) + '/' + str(max(snap.sources_total, 1)) + ' sources ok')}"
+        f"          {live}  {muted('·  ' + str(snap.sources_ok) + '/' + str(snap.sources_total) + ' providers responding')}"
     )
 
 
@@ -102,7 +102,7 @@ def station_markup(snap: Snapshot, units: Units) -> str:
     return (
         f"[{GREEN}]PRIMARY[/]  [bold {INK}]{st.id}[/]  {st.name}\n"
         f"{muted(station_offset_line(o, snap.pin, units))}\n"
-        f"{muted(o.source_label + '  ' + when_local(o.observed_at, snap.pin) + '  ·  age ' + age_clock(o.observed_at, snap.fetched_at, o.kind))}\n"
+        f"{muted(o.source_label + '  ' + when_local(o.observed_at, snap.pin) + '  ·  age ' + age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at))}\n"
         f"{muted(auto + kind)}"
         + (f"\n{muted(flags)}" if flags else "")
     )
@@ -342,7 +342,7 @@ def mosaic_card(snap: Snapshot, units: Units) -> str:
     if o is None:
         return f"{snap.pin.name}\nno obs"
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
-    age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+    age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
     alert = "  ⚠" if snap.alerts else ""
     return f"[bold {INK}]{snap.pin.name}[/]\n{t}  {o.source_label}  {age}{alert}"
 
@@ -358,7 +358,7 @@ def sources_markup(snap: Snapshot, units: Units) -> str:
         w = fmt_wind(o, units)
         rh = f"{o.humidity_pct:.0f}%" if o.humidity_pct is not None else "—"
         p = fmt_press(o.slp_hpa, units)
-        age = age_clock(o.observed_at, now, o.kind)
+        age = age_clock(o.observed_at, now, o.kind, stale=o.stale, fetched_at=o.fetched_at)
         row = f"{o.source_label:<16} {t:>6}  {w:<14} {rh:>4}  {p:<10} {age:>6}"
         if o.stale:
             lines.append(muted(row))

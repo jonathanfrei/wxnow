@@ -172,7 +172,7 @@ async def _mosaic_cmd(args: argparse.Namespace, cfg: Config) -> None:
             print(f"{snap.pin.name}  no obs")
             continue
         t = fmt_temp(o.temperature_c, cfg.units, nowcast=o.kind != "observation")
-        age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+        age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
         flag = "  ⚠" if snap.alerts else ""
         print(f"{snap.pin.name}  {t}  {o.source_label}  {age}{flag}")
 

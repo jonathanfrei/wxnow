@@ -36,7 +36,7 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     status = Text.assemble(
         ("● ", live_style),
         (live, live_style),
-        (f"  ·  {snap.sources_ok}/{snap.sources_total} sources ok", "dim"),
+        (f"  ·  {snap.sources_ok}/{snap.sources_total} providers responding", "dim"),
     )
 
     if o is None:
@@ -64,7 +64,7 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
         st.append(f"{o.station.id}  {o.station.name}\n")
         st.append(station_offset_line(o, pin, units) + "\n", style="dim")
         st.append(
-            f"{o.source_label}  {when_obs(o, pin)}  ·  age {age_clock(o.observed_at, now, o.kind)}\n",
+            f"{o.source_label}  {when_obs(o, pin)}  ·  age {age_clock(o.observed_at, now, o.kind, stale=o.stale, fetched_at=o.fetched_at)}\n",
             style="dim",
         )
         flags = " · ".join(o.quality_flags) or "—"
@@ -145,7 +145,7 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
                 f"{row.humidity_pct:.0f}%" if row.humidity_pct is not None else "—",
                 fmt_press(row.slp_hpa, units),
             ])
-        cells.append(age_clock(row.observed_at, now, row.kind))
+        cells.append(age_clock(row.observed_at, now, row.kind, stale=row.stale, fetched_at=row.fetched_at))
         src.add_row(*cells)
 
     conflict_line = Text()
@@ -209,7 +209,7 @@ def render_oneline(snap: Snapshot, units: Units, *, fmt: str = "plain") -> str:
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     w = fmt_wind(o, units)
     cond = o.condition or o.wx_text or ""
-    age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+    age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
     flag = " △" if any(s.conflict for s in snap.spreads) else ""
     alert = " ⚠" if snap.alerts else ""
     text = f"{snap.pin.name}  {t}  {cond}  {w}  {o.source_label} {age}{flag}{alert}"
