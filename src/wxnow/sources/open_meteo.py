@@ -182,7 +182,35 @@ async def fetch_open_meteo(pin: Pin, http: Http) -> Observation | None:
     )
 
 
-async def fetch_air_quality(pin: Pin, http: Http) -> dict:
+def _f(v: object) -> float | None:
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dominant(pm25: float | None, pm10: float | None, o3: float | None, no2: float | None) -> str | None:
+    ranked = [
+        ("PM2.5", pm25, 12.0),
+        ("PM10", pm10, 54.0),
+        ("O3", o3, 100.0),
+        ("NO2", no2, 100.0),
+    ]
+    scored = []
+    for name, val, ref in ranked:
+        if val is None:
+            continue
+        scored.append((val / ref, name))
+    if not scored:
+        return None
+    scored.sort(reverse=True)
+    return scored[0][1]
+
+
+async def fetch_air_quality(pin: Pin, http: Http) -> Observation | None:
+    fetched_at = datetime.now(timezone.utc)
     url = (
         "https://air-quality-api.open-meteo.com/v1/air-quality"
         f"?latitude={pin.lat:.4f}&longitude={pin.lon:.4f}"
@@ -190,18 +218,46 @@ async def fetch_air_quality(pin: Pin, http: Http) -> dict:
     )
     r = await http.get_json(url, ttl=300)
     if not isinstance(r.body, dict) or "current" not in r.body:
-        return {}
+        return None
     cur = r.body["current"]
-    aqi = cur.get("us_aqi")
-    return {
-        "aqi_us": None if aqi is None else float(aqi),
-        "aqi_category": aqi_category(None if aqi is None else float(aqi)),
-        "pm25": cur.get("pm2_5"),
-        "pm10": cur.get("pm10"),
-        "o3": cur.get("ozone"),
-        "no2": cur.get("nitrogen_dioxide"),
-        "co": cur.get("carbon_monoxide"),
-        "so2": cur.get("sulphur_dioxide"),
-        "uv_index": cur.get("uv_index"),
-        "raw": cur,
-    }
+    aqi = _f(cur.get("us_aqi"))
+    pm25 = _f(cur.get("pm2_5"))
+    pm10 = _f(cur.get("pm10"))
+    o3 = _f(cur.get("ozone"))
+    no2 = _f(cur.get("nitrogen_dioxide"))
+    uv = _f(cur.get("uv_index"))
+    observed = _parse_om_time(cur.get("time"), None)
+    grid_lat = float(r.body.get("latitude", pin.lat))
+    grid_lon = float(r.body.get("longitude", pin.lon))
+    station = Station(
+        id="open-meteo-aq",
+        name=f"Open-Meteo AQ {grid_lat:.2f},{grid_lon:.2f}",
+        lat=grid_lat,
+        lon=grid_lon,
+        elevation_m=float(r.body["elevation"]) if r.body.get("elevation") is not None else None,
+        kind="model",
+        official=False,
+        provider="Open-Meteo AQ",
+    )
+    return Observation(
+        source_id="open-meteo-aq",
+        source_label="Open-Meteo AQ",
+        kind="nowcast",
+        kind_label="air nowcast",
+        fetched_at=fetched_at,
+        observed_at=observed,
+        station=station,
+        aqi_us=aqi,
+        aqi_category=aqi_category(aqi),
+        pm25=pm25,
+        pm10=pm10,
+        o3=o3,
+        no2=no2,
+        co=_f(cur.get("carbon_monoxide")),
+        so2=_f(cur.get("sulphur_dioxide")),
+        uv_index=uv,
+        raw_payload=cur,
+        quality_flags=["model", "nowcast", "air"],
+        distance_km=haversine_km(pin.lat, pin.lon, grid_lat, grid_lon),
+        condition=_dominant(pm25, pm10, o3, no2),
+    )

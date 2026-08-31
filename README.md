@@ -44,10 +44,14 @@ wxnow Tulsa            # place search
 wxnow 36.2,-95.9       # pin
 wxnow --card KTUL      # one-shot colored card
 wxnow --json KTUL      # snapshot for scripts
-wxnow --one-line KTUL  # tmux / waybar / polybar
-wxnow --metar KTUL     # raw METAR
+wxnow --one-line --format waybar KTUL
+wxnow --metrics KTUL           # Prometheus / OpenMetrics
+wxnow --compare KTUL,LIRN
+wxnow --preset running KTUL
+wxnow --jsonl --watch KTUL
+wxnow --metar KTUL
 wxnow --units imperial
-wxnow --offline        # cache only
+wxnow --offline
 wxnow --print-config
 ```
 
@@ -111,7 +115,11 @@ show_raw = true
 
 Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used in v1).
 
-## v1 sources
+## Sources (v2)
+
+AQI and UV come from **Open-Meteo AQ** as their own nowcast row (`fill = { aqi, uv }`), not as if the METAR measured them.
+
+Presets (`--preset` / Shift+P in the TUI) only reorder gauges: `default`, `aviation`, `marine`, `fire`, `running`.
 
 | Source | Kind | Needs key |
 |---|---|---|

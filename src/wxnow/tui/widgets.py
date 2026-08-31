@@ -186,6 +186,68 @@ def gauge_aqi(o: Observation) -> str:
     return f"{muted('AQI')}\n[{color}]{o.aqi_us:.0f} {cat}[/]\n{bar}"
 
 
+def gauge_ceiling(o: Observation, units: Units) -> str:
+    from wxnow.format import fmt_height
+    c = fmt_height(o.ceiling_ft, units) if o.ceiling_ft else "unlimited"
+    return f"{muted('CEILING')}\n[bold {INK}]{c}[/]\n{muted('lowest BKN/OVC')}"
+
+
+def gauge_wetbulb(o: Observation, units: Units) -> str:
+    from wxnow.format import fmt_temp
+    return f"{muted('WET-BULB')}\n[bold {INK}]{fmt_temp(o.wetbulb_c, units)}[/]\n{muted('Stull 2011')}"
+
+
+def gauge_dew(o: Observation, units: Units) -> str:
+    from wxnow.format import fmt_temp
+    return f"{muted('DEW POINT')}\n[bold {INK}]{fmt_temp(o.dewpoint_c, units)}[/]\n{muted('moisture')}"
+
+
+def gauge_temp(o: Observation, units: Units) -> str:
+    from wxnow.format import fmt_temp
+    tmin = fmt_temp(o.today_min_c, units)
+    tmax = fmt_temp(o.today_max_c, units)
+    return (
+        f"{muted('TEMPERATURE')}\n[bold {INK}]{fmt_temp(o.temperature_c, units, nowcast=o.kind != 'observation')}[/]\n"
+        f"{muted(f'today {tmin} / {tmax}')}"
+    )
+
+
+PRESETS: dict[str, tuple[str, ...]] = {
+    "default": ("humidity", "pressure", "wind", "visibility", "uv", "aqi"),
+    "aviation": ("visibility", "wind", "pressure", "ceiling", "humidity", "aqi"),
+    "marine": ("wind", "visibility", "pressure", "humidity", "uv", "aqi"),
+    "fire": ("humidity", "wind", "temperature", "pressure", "visibility", "aqi"),
+    "running": ("wetbulb", "aqi", "uv", "dew", "wind", "humidity"),
+}
+GAUGE_SLOT_IDS = ("g-hum", "g-pres", "g-wind", "g-vis", "g-uv", "g-aqi")
+
+
+def render_gauges(snap: Snapshot, units: Units) -> dict[str, str]:
+    """Map widget id -> markup for the active preset."""
+    o = snap.primary()
+    if o is None:
+        return {sid: muted("—") for sid in GAUGE_SLOT_IDS}
+    uv_o = snap.filled_obs("uv_index") or o
+    aqi_o = snap.filled_obs("aqi_us") or o
+    makers = {
+        "humidity": lambda: gauge_humidity(o),
+        "pressure": lambda: gauge_pressure(o, units),
+        "wind": lambda: gauge_wind(o, units),
+        "visibility": lambda: gauge_vis(o, units),
+        "uv": lambda: gauge_uv(uv_o),
+        "aqi": lambda: gauge_aqi(aqi_o),
+        "ceiling": lambda: gauge_ceiling(o, units),
+        "wetbulb": lambda: gauge_wetbulb(o, units),
+        "dew": lambda: gauge_dew(o, units),
+        "temperature": lambda: gauge_temp(o, units),
+    }
+    names = PRESETS.get(snap.preset or "default", PRESETS["default"])
+    out: dict[str, str] = {}
+    for slot, name in zip(GAUGE_SLOT_IDS, names):
+        out[slot] = makers.get(name, lambda: muted(name))()
+    return out
+
+
 def sky_markup(o: Observation, units: Units) -> str:
     lines = [muted("SKY / CLOUD LAYERS")]
     layers = [c for c in o.clouds if c.cover not in {"CLR", "SKC", "NCD", "NSC"}]

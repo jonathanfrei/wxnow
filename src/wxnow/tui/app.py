@@ -18,9 +18,9 @@ from wxnow.cache import DiskCache
 from wxnow.models import Snapshot
 from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
 from wxnow.tui.widgets import (
-    alerts_markup, conflict_markup, gauge_aqi, gauge_humidity, gauge_pressure,
-    gauge_uv, gauge_vis, gauge_wind, header_line, hero_markup, metar_line,
-    sky_markup, sources_markup, station_markup, wind_precip_markup,
+    PRESETS, alerts_markup, conflict_markup, header_line, hero_markup,
+    metar_line, render_gauges, sky_markup, sources_markup, station_markup,
+    wind_precip_markup,
 )
 from wxnow.units import Units, next_units
 from wxnow.explain import explain
@@ -63,6 +63,7 @@ class WxNowApp(App):
         Binding("/", "search", "search"),
         Binding("s", "cycle_source", "sources"),
         Binding("u", "cycle_units", "units"),
+        Binding("shift+p", "cycle_preset", "preset", show=False),
         Binding("r", "refresh", "refresh"),
         Binding("p", "pin", "pin"),
         Binding("m", "raw", "raw METAR"),
@@ -196,6 +197,9 @@ class WxNowApp(App):
         elif theme in {"high-contrast", "high"}:
             screen.add_class("theme-high")
             self.theme = "wxnow-dark"
+        elif theme in {"colorblind", "deuteranopia"}:
+            screen.add_class("theme-high")
+            self.theme = "wxnow-dark"
         else:
             self.theme = "wxnow-dark"
 
@@ -208,12 +212,14 @@ class WxNowApp(App):
         self.query_one("#hero", Static).update(hero_markup(snap, units, compact=compact))
         self.query_one("#station", Static).update(station_markup(snap, units))
         if o:
-            self.query_one("#g-hum", Static).update(gauge_humidity(o))
-            self.query_one("#g-pres", Static).update(gauge_pressure(o, units))
-            self.query_one("#g-wind", Static).update(gauge_wind(o, units))
-            self.query_one("#g-vis", Static).update(gauge_vis(o, units))
-            self.query_one("#g-uv", Static).update(gauge_uv(o))
-            self.query_one("#g-aqi", Static).update(gauge_aqi(o))
+            names = PRESETS.get(snap.preset or "default", PRESETS["default"])
+            from wxnow.tui.widgets import GAUGE_SLOT_IDS
+            for sid, name in zip(GAUGE_SLOT_IDS, names):
+                pane = self.query_one(f"#{sid}")
+                if isinstance(pane, Pane):
+                    pane.field = name
+            for sid, markup in render_gauges(snap, units).items():
+                self.query_one(f"#{sid}", Static).update(markup)
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
         self.query_one("#sources", Static).update(sources_markup(snap, units))
@@ -254,6 +260,16 @@ class WxNowApp(App):
     async def action_refresh(self) -> None:
         self.query_one("#header", Static).update("refreshing…")
         await self._refresh()
+
+    def action_cycle_preset(self) -> None:
+        names = list(PRESETS)
+        cur = self.cfg.preset if self.cfg.preset in PRESETS else "default"
+        nxt = names[(names.index(cur) + 1) % len(names)]
+        self.cfg.preset = nxt
+        if self.snap:
+            self.snap.preset = nxt
+            self._paint(self.snap)
+        self.notify(f"preset: {nxt}")
 
     def action_cycle_units(self) -> None:
         self.units = next_units(self.units)  # type: ignore[arg-type]
@@ -323,7 +339,9 @@ class WxNowApp(App):
             self.run_worker(self._goto(self.cfg.favorites[idx]), exclusive=True)
 
     async def _goto(self, q: str) -> None:
+        from wxnow.recents import remember
         self.query = q
+        remember(q)
         self.query_one("#header", Static).update(f"loading {q}…")
         await self._refresh()
 

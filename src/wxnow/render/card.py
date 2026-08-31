@@ -170,16 +170,29 @@ def when_obs(o, pin) -> str:
     return when_local(o.observed_at, pin)
 
 
-def render_oneline(snap: Snapshot, units: Units) -> str:
+def render_oneline(snap: Snapshot, units: Units, *, fmt: str = "plain") -> str:
     o = snap.primary()
     if o is None:
-        return f"{snap.pin.name}: no observation"
+        text = f"{snap.pin.name}: no observation"
+        if fmt == "waybar":
+            import json
+            return json.dumps({"text": text, "class": "wxnow-empty", "tooltip": "wxnow: no observation"})
+        return text
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     w = fmt_wind(o, units)
     cond = o.condition or o.wx_text or ""
     age = age_clock(o.observed_at, snap.fetched_at, o.kind)
-    flag = ""
-    if any(s.conflict for s in snap.spreads):
-        flag = " △"
+    flag = " △" if any(s.conflict for s in snap.spreads) else ""
     alert = " ⚠" if snap.alerts else ""
-    return f"{snap.pin.name}  {t}  {cond}  {w}  {o.source_label} {age}{flag}{alert}"
+    text = f"{snap.pin.name}  {t}  {cond}  {w}  {o.source_label} {age}{flag}{alert}"
+    if fmt == "tmux":
+        return text.replace(" △", " #[fg=yellow]△#[default]").replace(" ⚠", " #[fg=red]⚠#[default]")
+    if fmt == "waybar":
+        import json
+        cls = ["wxnow"]
+        if snap.alerts:
+            cls.append("wxnow-alert")
+        if any(s.conflict for s in snap.spreads):
+            cls.append("wxnow-conflict")
+        return json.dumps({"text": f"{t} {cond}", "tooltip": text, "class": " ".join(cls)})
+    return text

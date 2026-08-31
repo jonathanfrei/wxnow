@@ -156,16 +156,35 @@ class Snapshot:
     sources_total: int = 0
     spreads: list[Spread] = field(default_factory=list)
     offline: bool = False
+    fill: dict[str, str] = field(default_factory=dict)  # uv/aqi -> source_id
+    preset: str = "default"
 
     def primary(self) -> Observation | None:
         for o in self.observations:
             if o.source_id == self.primary_id:
                 return o
-        return self.observations[0] if self.observations else None
+        weather = self.weather()
+        return weather[0] if weather else (self.observations[0] if self.observations else None)
 
     def by_id(self, source_id: str) -> Observation | None:
         for o in self.observations:
             if o.source_id == source_id:
+                return o
+        return None
+
+    def weather(self) -> list[Observation]:
+        return [o for o in self.observations if o.temperature_c is not None]
+
+    def filled_obs(self, attr: str) -> Observation | None:
+        """Observation that owns a fill field (AQI/UV), else first that has it."""
+        key = {"uv_index": "uv", "aqi_us": "aqi", "aqi_category": "aqi"}.get(attr, attr)
+        sid = self.fill.get(key)
+        if sid:
+            o = self.by_id(sid)
+            if o is not None and getattr(o, attr, None) is not None:
+                return o
+        for o in self.observations:
+            if getattr(o, attr, None) is not None:
                 return o
         return None
 

@@ -22,8 +22,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--units", choices=["metric", "imperial", "aviation"])
     p.add_argument("--theme", choices=["auto", "night", "day", "high-contrast", "colorblind", "mono"])
     p.add_argument("--json", action="store_true", help="machine-readable snapshot")
+    p.add_argument("--jsonl", action="store_true", help="one JSON object per line (implies --watch on tty off)")
     p.add_argument("--card", action="store_true", help="one-shot colored card")
     p.add_argument("--one-line", action="store_true", help="tmux / waybar / polybar line")
+    p.add_argument("--format", dest="line_format", choices=["plain", "waybar", "tmux", "polybar"], help="one-line skin")
+    p.add_argument("--metrics", action="store_true", help="Prometheus / OpenMetrics text")
+    p.add_argument("--compare", metavar="A,B", help="diff two pins (queries or favorites)")
+    p.add_argument("--preset", choices=["default", "aviation", "marine", "fire", "running"])
     p.add_argument("--metar", action="store_true", help="raw METAR only")
     p.add_argument("--watch", action="store_true", help="refresh loop (card / json / one-line)")
     p.add_argument("--offline", action="store_true", help="cache only, no network")
@@ -41,6 +46,10 @@ def _cfg(args: argparse.Namespace) -> Config:
         cfg.units = args.units
     if args.theme:
         cfg.theme = args.theme
+    if getattr(args, "preset", None):
+        cfg.preset = args.preset
+    if getattr(args, "line_format", None):
+        cfg.line_format = args.line_format
     return cfg
 
 
@@ -58,8 +67,12 @@ async def _once(args: argparse.Namespace, cfg: Config):
 
     snap = await fetch_snapshot(_query(args, cfg), cfg, offline=args.offline)
     units: Units = cfg.units
-    if args.json:
-        print(render_json(snap, indent=None if args.watch else 2))
+    if args.metrics:
+        from wxnow.render.metrics import render_metrics
+        print(render_metrics(snap), end="")
+        return snap
+    if args.json or args.jsonl:
+        print(render_json(snap, indent=None if (args.watch or args.jsonl) else 2))
         return snap
     if args.metar:
         o = snap.primary()
@@ -67,7 +80,7 @@ async def _once(args: argparse.Namespace, cfg: Config):
         print(raw or "")
         return snap
     if args.one_line:
-        print(render_oneline(snap, units))
+        print(render_oneline(snap, units, fmt=cfg.line_format))
         return snap
     render_card(snap, units)
     return snap
@@ -84,12 +97,16 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
             digest = render_json(snap, indent=None)
             changed = digest != last
             last = digest
-            if args.json:
+            if args.json or args.jsonl:
                 if changed:
                     print(digest, flush=True)
             elif args.one_line:
                 if changed:
-                    print(render_oneline(snap, cfg.units), flush=True)
+                    print(render_oneline(snap, cfg.units, fmt=cfg.line_format), flush=True)
+            elif args.metrics:
+                from wxnow.render.metrics import render_metrics
+                if changed:
+                    print(render_metrics(snap), end="", flush=True)
             elif args.metar:
                 o = snap.primary()
                 raw = (o.raw_metar if o else None) or ""
@@ -106,6 +123,15 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
         await asyncio.sleep(max(30, cfg.refresh_secs))
 
 
+async def _compare(args: argparse.Namespace, cfg: Config) -> None:
+    parts = [x.strip() for x in (args.compare or "").split(",") if x.strip()]
+    if len(parts) != 2:
+        raise ValueError("--compare needs two queries, e.g. KTUL,KBOS")
+    a, b = await fetch_snapshot(parts[0], cfg, offline=args.offline), await fetch_snapshot(parts[1], cfg, offline=args.offline)
+    from wxnow.render.compare import render_compare
+    print(render_compare(a, b, cfg.units), end="")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.print_config:
@@ -113,8 +139,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"# default path: {config_path()}", file=sys.stderr)
         return 0
     cfg = _cfg(args)
+    if args.compare:
+        try:
+            asyncio.run(_compare(args, cfg))
+        except KeyboardInterrupt:
+            return 0
+        except Exception as exc:
+            print(f"wxnow: {exc}", file=sys.stderr)
+            return 1
+        return 0
     want_tui = (
-        not args.json and not args.card and not args.one_line and not args.metar
+        not args.json and not args.jsonl and not args.card and not args.one_line
+        and not args.metar and not args.metrics
         and not args.no_tui and sys.stdout.isatty()
     )
     if args.watch and not want_tui:
