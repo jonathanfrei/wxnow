@@ -21,16 +21,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--station", metavar="ICAO", help="lock a METAR station id")
     p.add_argument("--units", choices=["metric", "imperial", "aviation"])
     p.add_argument("--theme", choices=["auto", "night", "day", "high-contrast", "colorblind", "mono"])
-    p.add_argument("--json", action="store_true", help="machine-readable snapshot")
-    p.add_argument("--jsonl", action="store_true", help="one JSON object per line (implies --watch on tty off)")
-    p.add_argument("--card", action="store_true", help="one-shot colored card")
-    p.add_argument("--one-line", action="store_true", help="tmux / waybar / polybar line")
+    output = p.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="machine-readable snapshot")
+    output.add_argument("--jsonl", action="store_true", help="continuous JSON Lines stream (implies --watch)")
+    output.add_argument("--card", action="store_true", help="one-shot colored card")
+    output.add_argument("--one-line", action="store_true", help="tmux / waybar / polybar line")
     p.add_argument("--format", dest="line_format", choices=["plain", "waybar", "tmux", "polybar"], help="one-line skin")
-    p.add_argument("--metrics", action="store_true", help="Prometheus / OpenMetrics text")
-    p.add_argument("--compare", metavar="A,B", help="diff two pins (queries or favorites)")
-    p.add_argument("--mosaic", nargs="?", const="favorites", metavar="Q,Q", help="watch-list cards (favorites if omitted)")
+    output.add_argument("--metrics", action="store_true", help="Prometheus / OpenMetrics text")
+    output.add_argument("--compare", metavar="A,B", help="diff two pins (queries or favorites)")
+    output.add_argument("--mosaic", nargs="?", const="favorites", metavar="Q,Q", help="watch-list cards (favorites if omitted)")
     p.add_argument("--preset", choices=["default", "aviation", "marine", "fire", "running"])
-    p.add_argument("--metar", action="store_true", help="raw METAR only")
+    output.add_argument("--metar", action="store_true", help="raw METAR only")
     p.add_argument("--watch", action="store_true", help="refresh loop (card / json / one-line)")
     p.add_argument("--offline", action="store_true", help="cache only, no network")
     p.add_argument("--no-tui", action="store_true", help="force card even on a tty")
@@ -38,6 +39,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--print-config", action="store_true", help="write a sample config to stdout")
     p.add_argument("--version", action="version", version=f"wxnow {__version__}")
     return p
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.line_format:
+        if any((args.json, args.jsonl, args.card, args.metrics, args.compare, args.mosaic is not None, args.metar)):
+            parser.error("--format can only be used with --one-line")
+        args.one_line = True
+    if args.watch and (args.compare or args.mosaic is not None):
+        parser.error("--watch cannot be used with --compare or --mosaic")
+    if args.jsonl:
+        args.watch = True
+    elif args.watch and not any((args.json, args.card, args.one_line, args.metrics, args.metar)):
+        args.card = True
+    return args
 
 
 def _cfg(args: argparse.Namespace) -> Config:
@@ -78,7 +95,9 @@ async def _once(args: argparse.Namespace, cfg: Config):
     if args.metar:
         o = snap.primary()
         raw = (o.raw_metar if o else None) or next((x.raw_metar for x in snap.observations if x.raw_metar), "")
-        print(raw or "")
+        if not raw:
+            raise RuntimeError(f"no METAR available for {_query(args, cfg) or 'this location'}")
+        print(raw)
         return snap
     if args.one_line:
         print(render_oneline(snap, units, fmt=cfg.line_format))
@@ -110,9 +129,18 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
                     print(render_metrics(snap), end="", flush=True)
             elif args.metar:
                 o = snap.primary()
-                raw = (o.raw_metar if o else None) or ""
+                raw = (o.raw_metar if o else None) or next(
+                    (x.raw_metar for x in snap.observations if x.raw_metar), ""
+                )
                 if changed:
-                    print(raw, flush=True)
+                    if raw:
+                        print(raw, flush=True)
+                    else:
+                        print(
+                            f"wxnow: no METAR available for {_query(args, cfg) or 'this location'}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
             else:
                 if changed or first:
                     render_card(snap, cfg.units)
@@ -159,7 +187,7 @@ async def _compare(args: argparse.Namespace, cfg: Config) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    args = parse_args(argv)
     if args.print_config:
         print(SAMPLE)
         print(f"# default path: {config_path()}", file=sys.stderr)

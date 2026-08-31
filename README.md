@@ -48,7 +48,7 @@ wxnow --one-line --format waybar KTUL
 wxnow --metrics KTUL           # Prometheus / OpenMetrics
 wxnow --compare KTUL,LIRN
 wxnow --preset running KTUL
-wxnow --jsonl --watch KTUL
+wxnow --jsonl KTUL             # continuous stream; Ctrl-C to stop
 wxnow --mosaic
 wxnow --mosaic KTUL,LIRN
 wxnow --metar KTUL
@@ -71,6 +71,7 @@ wxnow --print-config
 | `o` | Organize pins (reorder / delete) |
 | `↑↓` | Move between panes / scroll |
 | `w` | Watch mosaic (favorites) |
+| `Shift+P` | Cycle display preset |
 | `enter` | Source matrix (observations side by side) |
 | `m` | Toggle raw METAR |
 | `a` | Alerts full text |
