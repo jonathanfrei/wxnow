@@ -1,0 +1,14 @@
+<svg viewBox="0 0 994 904.0" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="992" height="902" rx="8"/><text font-weight="bold" font-size="18px" fill="#c5c8c6" text-anchor="middle" x="496" y="27">wxnow&#160;--card&#160;&#160;·&#160;&#160;New&#160;York,&#160;New&#160;York</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
+    <g transform="translate(9, 41)">
+    <g font-size="20px" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace">
+    <text fill="#2c3a4f" x="0" y="20">╭─</text><text fill="#2c3a4f" x="24.4" y="20">────────────────────────</text><text fill="#2c3a4f" x="317.2" y="20">&#160;wxnow&#160;·&#160;atmospheric&#160;status&#160;</text><text fill="#2c3a4f" x="658.8" y="20">────────────────────────</text><text fill="#2c3a4f" x="951.6" y="20">─╮</text>
+    </g>
+    </g>
+</svg>
