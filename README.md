@@ -67,7 +67,9 @@ wxnow --print-config
 | `s` | Cycle primary source |
 | `u` | Units (metric / imperial / aviation) |
 | `r` | Refresh now |
-| `p` | Pin / save location |
+| `p` | Pin current (opens organizer if already pinned) |
+| `o` | Organize pins (reorder / delete) |
+| `↑↓` | Move between panes / scroll |
 | `w` | Watch mosaic (favorites) |
 | `enter` | Source matrix (observations side by side) |
 | `m` | Toggle raw METAR |
