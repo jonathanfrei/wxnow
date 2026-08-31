@@ -10,9 +10,9 @@ Multiple sources. Station-honest. Zero forecast.
 wxnow "New York, NY"
 ```
 
-![wxnow console over New York, NY](docs/screenshots/console.svg)
+![wxnow card — New York, NY](docs/screenshots/card.svg)
 
-<p align="center"><em>Live capture · New York, NY · downtown METAR KJRB, 0.8 mi from the pin.</em></p>
+<p align="center"><em>Live capture · New York, NY · downtown METAR KJRB, 0.8 mi from the pin. METAR 76°F, NWS 74°F, Open-Meteo 72.3°F — shown, not averaged.</em></p>
 
 ## Why it exists
 
@@ -29,19 +29,15 @@ If there is no official station within 40 km you will see: *No station within 40
 
 ## In action
 
-Same engine, several skins. All of these are live over New York.
+Same engine, several skins. Default on a tty is the full-screen TUI. `enter` opens the source matrix (every provider, every field, observation history only). `w` opens a watch mosaic of pinned places — downtown, JFK, LaGuardia, and Newark were 76°F / 72°F / 75°F / 75°F on this capture.
 
-**One-shot card** — `wxnow --card --units imperial "New York, NY"`
+```bash
+wxnow --card --units imperial "New York, NY"
+wxnow --mosaic KJFK,KLGA,KEWR
+wxnow --compare KJFK,KLGA
+```
 
-![wxnow card — New York, NY](docs/screenshots/card.svg)
-
-**Source matrix** (`enter`) — every provider, every field, observation history only.
-
-![wxnow source matrix — New York, NY](docs/screenshots/matrix.svg)
-
-**Watch mosaic** (`w`) — current conditions at pinned places. Downtown, JFK, LaGuardia, Newark: four stations, four truths.
-
-![wxnow watch mosaic — New York metro](docs/screenshots/mosaic.svg)
+Recapture docs shots with `python scripts/capture_screenshots.py` (writes SVG + PNG under `docs/screenshots/`).
 
 ## Install
 
