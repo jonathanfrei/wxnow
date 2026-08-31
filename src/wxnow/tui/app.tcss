@@ -18,6 +18,18 @@ Screen {
     layout: vertical;
 }
 
+#board {
+    height: 1fr;
+    background: $bg;
+}
+
+#scroll-hint {
+    height: 1;
+    padding: 0 2;
+    color: $muted;
+    background: $bg;
+}
+
 #header {
     height: 1;
     padding: 0 1;
@@ -248,11 +260,57 @@ Screen.compact #gauges {
 }
 
 Screen.compact #hero-row {
+    layout: vertical;
+    height: auto;
+}
+
+Screen.compact #hero {
+    width: 100%;
+    height: auto;
+}
+
+Screen.compact #station {
+    width: 100%;
+    height: auto;
+    margin: 1 0 0 0;
+    display: block;
+}
+
+Screen.compact #mid-row,
+Screen.compact #context-row {
+    layout: vertical;
+    height: auto;
+}
+
+Screen.compact #sky,
+Screen.compact #windprecip,
+Screen.compact #radar,
+Screen.compact #tide {
+    width: 100%;
+    height: auto;
+    min-height: 5;
+    margin: 1 0 0 0;
+}
+
+Screen.wide #hero-row {
+    height: 8;
+}
+
+Screen.wide #gauges {
+    height: 9;
+}
+
+Screen.tall #mid-row {
+    height: 12;
+}
+
+Screen.tall #context-row {
     height: 7;
 }
 
-Screen.narrow #station {
-    display: none;
+Screen.tall #sources {
+    height: 1fr;
+    min-height: 12;
 }
 
 #mosaic-grid {
@@ -263,13 +321,7 @@ Screen.narrow #station {
     background: $bg;
 }
 
-Screen.short #mid-row {
-    display: none;
-}
 
-Screen.short #context-row {
-    display: none;
-}
 
 Screen.short #gauges {
     height: 5;

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Grid, Horizontal, Vertical
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.theme import Theme
 from textual.widgets import Footer, Static
@@ -17,6 +17,7 @@ from wxnow.http import Http
 from wxnow.cache import DiskCache
 from wxnow.models import Snapshot
 from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
+from wxnow.tui.pins import PinsScreen
 from wxnow.tui.mosaic import MosaicScreen
 from wxnow.tui.widgets import (
     PRESETS, alerts_markup, conflict_markup, header_line, hero_markup,
@@ -67,7 +68,12 @@ class WxNowApp(App):
         Binding("shift+p", "cycle_preset", "preset", show=False),
         Binding("r", "refresh", "refresh"),
         Binding("p", "pin", "pin"),
+        Binding("o", "organize_pins", "pins"),
         Binding("w", "mosaic", "mosaic"),
+        Binding("up", "pane_up", "up", show=False),
+        Binding("down", "pane_down", "down", show=False),
+        Binding("left", "pane_left", "left", show=False),
+        Binding("right", "pane_right", "right", show=False),
         Binding("m", "raw", "raw METAR"),
         Binding("a", "alerts", "alerts"),
         Binding("tab", "focus_next", "panes"),
@@ -112,7 +118,7 @@ class WxNowApp(App):
         self._tick = 0
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with VerticalScroll(id="board"):
             yield Static(id="header")
             with Horizontal(id="hero-row"):
                 yield Pane(id="hero", field="temperature")
@@ -134,6 +140,7 @@ class WxNowApp(App):
             yield Static(id="conflict")
             yield Static(id="alerts")
             yield Static(id="metar")
+        yield Static(id="scroll-hint")
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -250,6 +257,9 @@ class WxNowApp(App):
         self.screen.set_class(w < 110, "compact")
         self.screen.set_class(w < 90, "narrow")
         self.screen.set_class(h < 30, "short")
+        self.screen.set_class(w >= 140, "wide")
+        self.screen.set_class(h >= 48, "tall")
+        self._scroll_hint()
 
     def _paint_header(self) -> None:
         snap = self.snap
@@ -360,7 +370,82 @@ class WxNowApp(App):
             save_config(self.cfg)
             self.notify(f"pinned {q}  ({len(self.cfg.favorites)})")
         else:
-            self.notify(f"{q} already pinned")
+            self.action_organize_pins()
+
+    def action_organize_pins(self) -> None:
+        def _cb(result: object) -> None:
+            if not isinstance(result, tuple) or len(result) != 2:
+                return
+            go, items = result
+            self.cfg.favorites = list(items)
+            if self.cfg.default_location not in self.cfg.favorites:
+                self.cfg.default_location = self.cfg.favorites[0] if self.cfg.favorites else None
+            save_config(self.cfg)
+            if go:
+                self.run_worker(self._goto(str(go)), exclusive=True)
+
+        self.push_screen(PinsScreen(self.cfg.favorites, self.query), _cb)
+
+    PANE_IDS = (
+        "hero", "station",
+        "g-hum", "g-pres", "g-wind", "g-vis", "g-uv", "g-aqi",
+        "sky", "windprecip", "radar", "tide", "sources",
+    )
+
+    def _visible_panes(self) -> list:
+        out = []
+        for pid in self.PANE_IDS:
+            try:
+                w = self.query_one(f"#{pid}")
+            except Exception:
+                continue
+            if w.display:
+                out.append(w)
+        return out
+
+    def _focus_pane(self, delta: int) -> None:
+        panes = self._visible_panes()
+        if not panes:
+            return
+        cur = self.focused
+        try:
+            i = panes.index(cur)  # type: ignore[arg-type]
+        except ValueError:
+            i = 0
+        nxt = panes[(i + delta) % len(panes)]
+        nxt.focus()
+        try:
+            self.query_one("#board").scroll_to_widget(nxt, animate=False)
+        except Exception:
+            pass
+        self._scroll_hint()
+
+    def action_pane_down(self) -> None:
+        self._focus_pane(1)
+
+    def action_pane_up(self) -> None:
+        self._focus_pane(-1)
+
+    def action_pane_right(self) -> None:
+        self._focus_pane(1)
+
+    def action_pane_left(self) -> None:
+        self._focus_pane(-1)
+
+    def _scroll_hint(self) -> None:
+        try:
+            board = self.query_one("#board")
+            hint = self.query_one("#scroll-hint", Static)
+        except Exception:
+            return
+        y = getattr(board, "scroll_y", 0) or 0
+        max_y = getattr(board, "max_scroll_y", 0) or 0
+        bits = []
+        if y > 0.5:
+            bits.append("▲ more above")
+        if max_y > 0.5 and y < max_y - 0.5:
+            bits.append("▼ more below")
+        hint.update("  ·  ".join(bits) if bits else "")
 
     def action_fav(self, n: str) -> None:
         idx = int(n) - 1
