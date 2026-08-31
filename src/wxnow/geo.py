@@ -216,11 +216,6 @@ async def resolve(query: str | None, http: Http) -> Pin:
     if hits:
         h = hits[0]
         return Pin(query=query, name=h.name, lat=h.lat, lon=h.lon, resolver="nominatim")
-    # last resort IP
-    pin = await ip_guess(http)
-    if pin:
-        pin.warnings_note = "place search missed; IP guess"  # type: ignore[attr-defined]
-        return pin
     raise RuntimeError(f"Could not resolve location {query!r}")
 
 

@@ -15,9 +15,10 @@ from wxnow.units import Units
 from wxnow.derived import uv_category
 
 
-def render_card(snap: Snapshot, units: Units, *, width: int = 100) -> None:
+def render_card(snap: Snapshot, units: Units, *, width: int | None = None) -> None:
     console = Console(width=width, highlight=False)
-    console.print(_card(snap, units, width=width))
+    card_width = min(console.width, 100)
+    console.print(_card(snap, units, width=card_width))
 
 
 def _card(snap: Snapshot, units: Units, width: int) -> Panel:
@@ -71,24 +72,36 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     else:
         st.append("NOWCAST  Open-Meteo (no station)", style="magenta")
 
+    compact = width < 90
     gauges = Table.grid(expand=True, padding=(0, 1))
-    gauges.add_column()
-    gauges.add_column()
-    gauges.add_column()
+    for _ in range(1 if compact else 3):
+        gauges.add_column()
     rh = f"{o.humidity_pct:.0f}%" if o.humidity_pct is not None else "—"
-    uv = f"{o.uv_index:.0f} {uv_category(o.uv_index) or ''}".strip() if o.uv_index is not None else "—"
-    aqi = f"{o.aqi_us:.0f} {o.aqi_category or ''}".strip() if o.aqi_us is not None else "—"
+    uv_obs = snap.filled_obs("uv_index")
+    aqi_obs = snap.filled_obs("aqi_us")
+    uv_value = uv_obs.uv_index if uv_obs else None
+    aqi_value = aqi_obs.aqi_us if aqi_obs else None
+    uv = f"{uv_value:.0f} {uv_category(uv_value) or ''}".strip() if uv_value is not None else "—"
+    aqi = f"{aqi_value:.0f} {aqi_obs.aqi_category or ''}".strip() if aqi_obs and aqi_value is not None else "—"
+    if uv_obs and uv_obs.kind != "observation":
+        uv += " · model"
+    if aqi_obs and aqi_obs.kind != "observation":
+        aqi += " · model"
     press_spark = spark([p.value for p in o.pressure_history], 12) if o.pressure_history else ""
-    gauges.add_row(
+    gauge_values = [
         f"humidity  {rh}",
-        f"pressure  {fmt_press(o.slp_hpa, units)}\n{o.pressure_tendency or '—'} {press_spark}",
+        f"pressure  {fmt_press(o.slp_hpa, units)}  {o.pressure_tendency or '—'} {press_spark}",
         f"wind  {fmt_wind(o, units)}",
-    )
-    gauges.add_row(
-        f"visibility  {fmt_vis(o.visibility_m, units)}\n{vis_dots(o.visibility_m)}",
+        f"visibility  {fmt_vis(o.visibility_m, units)}  {vis_dots(o.visibility_m)}",
         f"UV  {uv}",
         f"AQI  {aqi}",
-    )
+    ]
+    if compact:
+        for value in gauge_values:
+            gauges.add_row(value)
+    else:
+        gauges.add_row(*gauge_values[:3])
+        gauges.add_row(*gauge_values[3:])
 
     sky_lines = []
     for c in o.clouds:
@@ -113,22 +126,27 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     src.add_column("SOURCE", style="bold")
     src.add_column("TEMP")
     src.add_column("WIND")
-    src.add_column("RH")
-    src.add_column("PRESS")
+    if not compact:
+        src.add_column("RH")
+        src.add_column("PRESS")
     src.add_column("AGE")
     conflict_temp = any(s.field == "temperature_c" and s.conflict for s in snap.spreads)
     for row in snap.observations:
         tstyle = "yellow" if conflict_temp else ""
         if row.stale:
             tstyle = "dim"
-        src.add_row(
+        cells = [
             row.source_label,
             Text(fmt_temp(row.temperature_c, units, nowcast=row.kind != "observation"), style=tstyle),
             fmt_wind(row, units),
-            f"{row.humidity_pct:.0f}%" if row.humidity_pct is not None else "—",
-            fmt_press(row.slp_hpa, units),
-            age_clock(row.observed_at, now, row.kind),
-        )
+        ]
+        if not compact:
+            cells.extend([
+                f"{row.humidity_pct:.0f}%" if row.humidity_pct is not None else "—",
+                fmt_press(row.slp_hpa, units),
+            ])
+        cells.append(age_clock(row.observed_at, now, row.kind))
+        src.add_row(*cells)
 
     conflict_line = Text()
     for s in snap.spreads:
@@ -152,14 +170,24 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     metar = Text(o.raw_metar or "", style="dim")
 
     mid = Table.grid(expand=True)
-    mid.add_column(ratio=3)
-    mid.add_column(ratio=2)
-    mid.add_row(hero, st)
+    if compact:
+        mid.add_column()
+        mid.add_row(hero)
+        mid.add_row(st)
+    else:
+        mid.add_column(ratio=3)
+        mid.add_column(ratio=2)
+        mid.add_row(hero, st)
 
     skywind = Table.grid(expand=True)
-    skywind.add_column()
-    skywind.add_column()
-    skywind.add_row(sky, windp)
+    if compact:
+        skywind.add_column()
+        skywind.add_row(sky)
+        skywind.add_row(windp)
+    else:
+        skywind.add_column()
+        skywind.add_column()
+        skywind.add_row(sky, windp)
 
     group = Group(header, status, mid, gauges, skywind, src, conflict_line, alert_txt, warn, metar)
     return Panel(group, title="wxnow · atmospheric status", border_style="#2c3a4f", padding=(0, 1))

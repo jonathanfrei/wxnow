@@ -254,6 +254,7 @@ class HelpScreen(ModalScreen[None]):
             "[cyan]/[/]  search place or station     [cyan]s[/]  cycle primary source\n"
             "[cyan]u[/]  units metric/imperial/av    [cyan]r[/]  refresh now\n"
             "[cyan]p[/]  pin current                 [cyan]o[/]  organize pins (reorder / delete)\n"
+            "[cyan]w[/]  watch mosaic               [cyan]shift+p[/]  cycle preset\n"
             "[cyan]↑↓[/]  move panes / scroll         [cyan]1–9[/]  saved places\n"
             "[cyan]enter[/]  source matrix           [cyan]m[/]  raw METAR / payload\n"
             "[cyan]a[/]  alerts full text            [cyan]e[/]  explain this number\n"
