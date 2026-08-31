@@ -115,6 +115,11 @@ enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar",
 [display]
 theme = "auto"            # auto is night; day is explicit
 show_raw = true
+
+[notify]
+gust_kt = 40               # false disables gust notifications
+aqi = 150                  # false disables AQI notifications
+alert_severity = "severe"
 ```
 
 `wxnow --print-config` dumps a sample.

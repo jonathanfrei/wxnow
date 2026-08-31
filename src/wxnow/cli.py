@@ -2,12 +2,28 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 
 from wxnow import __tagline__, __version__
 from wxnow.config import SAMPLE, Config, config_path, load_config
 from wxnow.engine import fetch_snapshot
+from wxnow.models import Snapshot
 from wxnow.units import Units
+
+
+def snapshot_change_key(snap: Snapshot) -> str:
+    from wxnow.render.json_out import snapshot_dict
+
+    payload = snapshot_dict(snap)
+    payload.pop("fetched_at", None)
+    payload.pop("sun", None)
+    radar = payload.get("radar")
+    if radar:
+        radar.pop("age_secs", None)
+    for observation in payload["observations"]:
+        observation.pop("fetched_at", None)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -115,8 +131,9 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
             from wxnow.render.json_out import render_json
             snap = await fetch_snapshot(_query(args, cfg), cfg, offline=args.offline)
             digest = render_json(snap, indent=None)
-            changed = digest != last
-            last = digest
+            change_key = snapshot_change_key(snap)
+            changed = change_key != last
+            last = change_key
             if args.json or args.jsonl:
                 if changed:
                     print(digest, flush=True)
