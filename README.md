@@ -7,7 +7,7 @@
 There is no 7-day strip. Recent context is the last hours of *observations*.
 
 ```
-NAPOLI, IT  40.88°N 14.29°E  ·  ● LIVE  ·  2/2 sources ok
+NAPOLI, IT  40.88°N 14.29°E  ·  ● LIVE  ·  2/2 providers responding
 
   88°F          ☀  Clear
   feels 89°     dew 68° · wet-bulb 74° · today obs 81° / 90°
@@ -110,7 +110,7 @@ favorites = ["KTUL", "KBOS"]
 
 [sources]
 primary = "metar"
-enabled = ["nws", "metar", "open-meteo", "open-meteo-aq"]
+enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy"]
 
 [display]
 theme = "auto"            # auto is night; day is explicit

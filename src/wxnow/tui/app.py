@@ -271,7 +271,7 @@ class WxNowApp(App):
             ago = f"refresh {sec}s ago  ·  "
         line = header_line(snap, clock(datetime.now(timezone.utc), snap.pin))
         # inject refresh age
-        line = line.replace("sources ok", f"{ago}sources ok")
+        line = line.replace("providers responding", f"{ago}providers responding")
         self.query_one("#header", Static).update(line)
 
     async def action_refresh(self) -> None:

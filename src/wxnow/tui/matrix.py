@@ -98,7 +98,7 @@ class MatrixScreen(Screen):
             uv = f"{o.uv_index:.0f}" if o.uv_index is not None else "—"
             aqi = f"{o.aqi_us:.0f}" if o.aqi_us is not None else "—"
             dist = f"{o.distance_km:.1f}km" if o.distance_km is not None else ("grid" if o.kind == "nowcast" else "—")
-            age = age_clock(o.observed_at, now, o.kind)
+            age = age_clock(o.observed_at, now, o.kind, stale=o.stale, fetched_at=o.fetched_at)
             name = Text(o.source_label)
             if o.source_id == self.snap.primary_id:
                 name.stylize("bold")

@@ -57,11 +57,27 @@ def coords(lat: float, lon: float) -> str:
     return f"{abs(lat):.2f}°{ns} {abs(lon):.2f}°{ew}"
 
 
-def age_clock(observed_at: datetime | None, now: datetime, kind: str = "observation") -> str:
+def age_clock(
+    observed_at: datetime | None,
+    now: datetime,
+    kind: str = "observation",
+    *,
+    stale: bool = False,
+    fetched_at: datetime | None = None,
+) -> str:
     if kind in {"nowcast", "blended", "model"}:
-        return "model"
+        if not stale:
+            return "model"
+        observed_at = fetched_at or observed_at
+        if observed_at is None:
+            return "model stale"
+        return "model stale " + _age_value(observed_at, now)
     if observed_at is None:
         return "—"
+    return _age_value(observed_at, now)
+
+
+def _age_value(observed_at: datetime, now: datetime) -> str:
     sec = max(0, int((now - observed_at).total_seconds()))
     if sec < 90:
         return f"{sec}s"
@@ -360,7 +376,7 @@ def copy_summary(snap: Snapshot, units: Units) -> str:
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     w = fmt_wind(o, units)
     p = fmt_press(o.slp_hpa, units)
-    age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+    age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
     wx = o.wx_text or o.condition or ""
     return (
         f"{snap.pin.name}  {t}  {wx}  {w}  {p}  "

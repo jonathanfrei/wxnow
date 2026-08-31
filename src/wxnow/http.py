@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ class HttpResult:
     stale: bool
     status: int | None = None
     error: str | None = None
+    cache_fetched_at: datetime | None = None
 
 
 class Http:
@@ -60,13 +62,21 @@ class Http:
     ) -> HttpResult:
         fresh = self.cache.fresh(url, ttl)
         if fresh is not None:
-            return HttpResult(url=url, body=fresh.body, text=fresh.text or "", from_cache=True, stale=False, status=200)
+            return HttpResult(
+                url=url, body=fresh.body, text=fresh.text or "", from_cache=True,
+                stale=False, status=200,
+                cache_fetched_at=datetime.fromtimestamp(fresh.fetched_at, timezone.utc),
+            )
 
         cached = self.cache.get(url, ttl)
         if self.offline:
             if cached is None:
                 return HttpResult(url=url, body=None, text="", from_cache=True, stale=True, error="offline and uncached")
-            return HttpResult(url=url, body=cached.body, text=cached.text or "", from_cache=True, stale=True, status=200)
+            return HttpResult(
+                url=url, body=cached.body, text=cached.text or "", from_cache=True,
+                stale=True, status=200,
+                cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
+            )
 
         hdrs = {"User-Agent": self.user_agent}
         if accept:
@@ -81,16 +91,28 @@ class Http:
             r = await client.get(url, headers=hdrs)
         except Exception as exc:
             if cached is not None:
-                return HttpResult(url=url, body=cached.body, text=cached.text or "", from_cache=True, stale=True, error=str(exc))
+                return HttpResult(
+                    url=url, body=cached.body, text=cached.text or "", from_cache=True,
+                    stale=True, error=str(exc),
+                    cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
+                )
             return HttpResult(url=url, body=None, text="", from_cache=False, stale=True, error=str(exc))
 
         if r.status_code == 304 and cached is not None:
-            self.cache.put(url, cached.body, etag=cached.etag, text=cached.text)
-            return HttpResult(url=url, body=cached.body, text=cached.text or "", from_cache=True, stale=False, status=304)
+            refreshed = self.cache.put(url, cached.body, etag=cached.etag, text=cached.text)
+            return HttpResult(
+                url=url, body=cached.body, text=cached.text or "", from_cache=True,
+                stale=False, status=304,
+                cache_fetched_at=datetime.fromtimestamp(refreshed.fetched_at, timezone.utc),
+            )
 
         if r.status_code >= 400:
             if cached is not None:
-                return HttpResult(url=url, body=cached.body, text=cached.text or "", from_cache=True, stale=True, status=r.status_code, error=f"HTTP {r.status_code}")
+                return HttpResult(
+                    url=url, body=cached.body, text=cached.text or "", from_cache=True,
+                    stale=True, status=r.status_code, error=f"HTTP {r.status_code}",
+                    cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
+                )
             return HttpResult(url=url, body=None, text=r.text[:500], from_cache=False, stale=True, status=r.status_code, error=f"HTTP {r.status_code}")
 
         text = r.text

@@ -33,7 +33,10 @@ def render_compare(a: Snapshot, b: Snapshot, units: Units) -> str:
         if attr == "wx":
             return (o.condition or o.wx_text or "—")[:16]
         if attr == "age":
-            return age_clock(o.observed_at, a.fetched_at if o is pa else b.fetched_at, o.kind)
+            return age_clock(
+                o.observed_at, a.fetched_at if o is pa else b.fetched_at, o.kind,
+                stale=o.stale, fetched_at=o.fetched_at,
+            )
         if attr == "src":
             return o.source_label
         return "—"
