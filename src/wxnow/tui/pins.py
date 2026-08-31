@@ -26,7 +26,7 @@ def remove_item(items: list[str], index: int) -> list[str]:
     return [x for i, x in enumerate(items) if i != index]
 
 
-class PinsScreen(ModalScreen[str | None]):
+class PinsScreen(ModalScreen[tuple[str | None, list[str]] | None]):
     BINDINGS = [
         Binding("escape", "dismiss", "close"),
         Binding("q", "dismiss", "close", show=False),
@@ -56,9 +56,10 @@ class PinsScreen(ModalScreen[str | None]):
             yield Static(id="pins-body")
 
     def on_mount(self) -> None:
-        self._render()
+        self._redraw()
 
-    def _render(self) -> None:
+    def _redraw(self) -> None:
+        """Paint the list. Must not be named _render — that shadows Textual's."""
         if not self.items:
             self.query_one("#pins-body", Static).update(
                 "[bold]pins[/]  empty\n\n[#b4c0cc]p to pin the current place · esc close[/]"
@@ -76,25 +77,25 @@ class PinsScreen(ModalScreen[str | None]):
     def action_up(self) -> None:
         if self.items:
             self.index = (self.index - 1) % len(self.items)
-            self._render()
+            self._redraw()
 
     def action_down(self) -> None:
         if self.items:
             self.index = (self.index + 1) % len(self.items)
-            self._render()
+            self._redraw()
 
     def action_shift_up(self) -> None:
         self.items = move_item(self.items, self.index, -1)
         self.index = max(0, self.index - 1)
         self.changed = True
-        self._render()
+        self._redraw()
 
     def action_shift_down(self) -> None:
         self.items = move_item(self.items, self.index, 1)
         if self.index < len(self.items) - 1:
             self.index += 1
         self.changed = True
-        self._render()
+        self._redraw()
 
     def action_delete(self) -> None:
         if not self.items:
@@ -103,7 +104,7 @@ class PinsScreen(ModalScreen[str | None]):
         if self.index >= len(self.items):
             self.index = max(0, len(self.items) - 1)
         self.changed = True
-        self._render()
+        self._redraw()
 
     def action_go(self) -> None:
         q = self.items[self.index] if self.items else None
