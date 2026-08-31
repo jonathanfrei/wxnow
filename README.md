@@ -1,20 +1,47 @@
 # wxnow
 
-> A terminal instrument panel for the atmosphere as it is — multiple sources, station-honest, zero forecast.
+**A terminal instrument panel for the atmosphere as it is.**
 
-`wxnow` is a **now-console**, not a forecast brochure. It races METAR, NWS station observations, and an Open-Meteo nowcast for one point on Earth, then shows the disagreement instead of averaging it away.
+Multiple sources. Station-honest. Zero forecast.
 
-There is no 7-day strip. Recent context is the last hours of *observations*.
+`wxnow` is a now-console, not a brochure. It races METAR, NWS station observations, and an Open-Meteo nowcast for one point on Earth — then shows the disagreement instead of averaging it away. There is no 7-day strip. Recent context is the last hours of *observations*.
 
 ```
-NAPOLI, IT  40.88°N 14.29°E  ·  ● LIVE  ·  2/2 providers responding
-
-  88°F          ☀  Clear
-  feels 89°     dew 68° · wet-bulb 74° · today obs 81° / 90°
-
-  PRIMARY  LIRN  Naples Intl
-  4.1 km of pin · METAR 16m ago · AUTO ASOS
+wxnow "New York, NY"
 ```
+
+![wxnow console over New York, NY](docs/screenshots/console.svg)
+
+<p align="center"><em>Live capture · New York, NY · downtown METAR KJRB, 0.8 mi from the pin.</em></p>
+
+## Why it exists
+
+City-level weather is a lie. The station is the truth.
+
+Most terminal weather apps pick one number and dress it up: a model grid, a “feels like,” a chance of rain this afternoon. `wxnow` does the opposite.
+
+- **Observations over models.** METAR and NWS first. Open-Meteo is labeled `nowcast` / `model`, never wearing an observation badge.
+- **Disagreement is the product.** If downtown New York is 76°F, LaGuardia 75°F, and JFK 72°F, you see all three. Nothing is blended into “the temperature.”
+- **Freshness is first-class.** Age sits next to every reading. Stale cells dim. A cache hit from ten minutes ago does not pretend to be live.
+- **No forecast on the default path.** Not hidden behind a toggle. Not in the mosaic. Not in the radar. Radar is the *current* frame plus its age — not a loop of what’s coming.
+
+If there is no official station within 40 km you will see: *No station within 40 km. Showing model nowcast.*
+
+## In action
+
+Same engine, several skins. All of these are live over New York.
+
+**One-shot card** — `wxnow --card --units imperial "New York, NY"`
+
+![wxnow card — New York, NY](docs/screenshots/card.svg)
+
+**Source matrix** (`enter`) — every provider, every field, observation history only.
+
+![wxnow source matrix — New York, NY](docs/screenshots/matrix.svg)
+
+**Watch mosaic** (`w`) — current conditions at pinned places. Downtown, JFK, LaGuardia, Newark: four stations, four truths.
+
+![wxnow watch mosaic — New York metro](docs/screenshots/mosaic.svg)
 
 ## Install
 
@@ -26,34 +53,34 @@ cd wxnow
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-wxnow KTUL
+wxnow "New York, NY"
 ```
 
 To run from any directory, put the venv script on your PATH:
 
 ```bash
-ln -s "$(pwd)/.venv/bin/wxnow" ~/.local/bin/wxnow
+ln -sfn "$(pwd)/.venv/bin/wxnow" ~/.local/bin/wxnow
 ```
 
 ## Use
 
 ```bash
-wxnow                  # TUI (config default, else IP guess — labeled)
-wxnow KTUL             # ICAO
-wxnow Tulsa            # place search
-wxnow 36.2,-95.9       # pin
-wxnow --card KTUL      # one-shot colored card
-wxnow --json KTUL      # snapshot for scripts
-wxnow --one-line --format waybar KTUL
-wxnow --metrics KTUL           # Prometheus / OpenMetrics
-wxnow --compare KTUL,LIRN
-wxnow --preset running KTUL
-wxnow --jsonl KTUL             # continuous stream; Ctrl-C to stop
+wxnow                         # TUI (config default, else IP guess — labeled)
+wxnow "New York, NY"          # place search
+wxnow KJFK                    # ICAO
+wxnow 40.71,-74.01            # pin
+wxnow --card --units imperial "New York, NY"
+wxnow --json "New York, NY"   # snapshot for scripts
+wxnow --one-line --format waybar KJFK
+wxnow --metrics KJFK
+wxnow --compare KJFK,KLGA
+wxnow --preset aviation KJFK
+wxnow --jsonl KJFK            # continuous stream; Ctrl-C to stop
 wxnow --mosaic
-wxnow --mosaic KTUL,LIRN
-wxnow --metar KTUL
+wxnow --mosaic KJFK,KLGA,KEWR
+wxnow --metar KJFK
 wxnow --units imperial
-wxnow --offline
+wxnow --offline               # cache only
 wxnow --print-config
 ```
 
@@ -80,18 +107,19 @@ wxnow --print-config
 | `?` | Cheatsheet |
 | `q` | Quit |
 
-The default screen is the instrument panel: big temperature, station offset from your pin, gauges, cloud layers, a source-conflict strip. `enter` is the product — a matrix of live sources with stale cells dimmed, disagreements boxed, and a sparkline from **measured** history only.
+The default screen is the instrument panel: big temperature, station offset from your pin, gauges, cloud layers, radar snapshot, tide/water when coastal, a source-conflict strip. `enter` is the product — a matrix of live sources with stale cells dimmed, disagreements boxed, and a sparkline from **measured** history only.
+
+Presets (`default`, `aviation`, `marine`, `fire`, `running`) only reorder the gauges. They do not add forecast fields.
 
 ## What it will not do
 
 - Fake precision from a model grid
 - Silently fall back to a city 80 km away
 - Label an IP location as GPS
+- Replace a failed place search with an IP guess
 - Show “chance of rain this afternoon”
 - Require a key to ship
 - Average a METAR and a model into one “the temperature”
-
-If there is no official station within 40 km you will see: *No station within 40 km. Showing model nowcast.*
 
 ## Config
 
@@ -105,8 +133,8 @@ reduced_motion = false
 contact = "you@example.com"   # NWS User-Agent
 
 [location]
-default = "KTUL"
-favorites = ["KTUL", "KBOS"]
+default = "New York, NY"
+favorites = ["New York, NY", "KJFK", "KLGA", "KEWR"]
 
 [sources]
 primary = "metar"
@@ -115,6 +143,7 @@ enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar",
 [display]
 theme = "auto"            # auto is night; day is explicit
 show_raw = true
+preset = "default"        # default | aviation | marine | fire | running
 
 [notify]
 gust_kt = 40               # false disables gust notifications
@@ -124,28 +153,27 @@ alert_severity = "severe"
 
 `wxnow --print-config` dumps a sample.
 
-Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used in v1).
+Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used on the happy path). `--watch` notifies on gust / AQI / alert threshold crossings, not on every refresh.
 
-## Sources (v2)
+## Sources
 
-AQI and UV come from **Open-Meteo AQ** as their own nowcast row (`fill = { aqi, uv }`), not as if the METAR measured them.
-
-Presets (`--preset` / Shift+P in the TUI) only reorder gauges: `default`, `aviation`, `marine`, `fire`, `running`.
+AQI and UV come from **Open-Meteo AQ** as their own nowcast row, not as if the METAR measured them.
 
 | Source | Kind | Needs key |
-|---|---|---|
+|---|---|
 | Aviation Weather Center METAR | observation | no |
 | NWS `api.weather.gov` obs + point alerts | observation (US) | no |
 | Open-Meteo current | nowcast (labeled) | no |
 | Open-Meteo Air Quality | AQI / UV extra | no |
-
-v2: extra source keys, PWS, Prometheus, Waybar polish. v3: radar snapshot, tides, mosaic, threshold notify.
+| RainViewer | current radar frame + age | no |
+| NOAA CO-OPS | tide / water, within 50 km | no |
+| NDBC buoy / C-MAN | observation, within 80 km | no |
 
 ## Stack
 
 Python 3.11+ · Textual 8 · httpx. One location, many sources, now.
 
-Agents and contributors: see [AGENTS.md](AGENTS.md).
+Agents and contributors: see [AGENTS.md](AGENTS.md). Recapture docs shots with `python scripts/capture_screenshots.py`.
 
 ## License
 
