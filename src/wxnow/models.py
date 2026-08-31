@@ -46,6 +46,7 @@ class Pin:
     resolver: str = "unknown"  # icao, iata, coords, nominatim, ip, gps
     guessed: bool = False
     region: str | None = None
+    radar_station: str | None = None
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Alert:
     ends: datetime | None = None
     source: str = "nws"
     color: str = "amber"  # amber | red | dim
+    contains_pin: bool | None = True  # None = untested geometry
 
 
 @dataclass
@@ -133,6 +135,28 @@ class Observation:
 
 
 @dataclass
+class RadarSnapshot:
+    source: str
+    frame_at: datetime | None
+    age_secs: float | None
+    station: str | None = None
+    note: str = "current frame only — not a loop"
+    stale: bool = False
+
+
+@dataclass
+class TideSnapshot:
+    station_id: str
+    station_name: str
+    distance_km: float
+    water_level_m: float | None = None
+    water_temp_c: float | None = None
+    next_event: str | None = None  # "high 14:20" / "low 08:10"
+    next_at: datetime | None = None
+    observed_at: datetime | None = None
+
+
+@dataclass
 class Spread:
     field: str
     values: dict[str, float]
@@ -158,6 +182,8 @@ class Snapshot:
     offline: bool = False
     fill: dict[str, str] = field(default_factory=dict)  # uv/aqi -> source_id
     preset: str = "default"
+    radar: RadarSnapshot | None = None
+    tide: TideSnapshot | None = None
 
     def primary(self) -> Observation | None:
         for o in self.observations:

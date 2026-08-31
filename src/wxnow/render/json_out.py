@@ -34,9 +34,26 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
                 "severity": a.severity,
                 "ends": a.ends.isoformat() if a.ends else None,
                 "source": a.source,
+                "contains_pin": a.contains_pin,
             }
             for a in snap.alerts
         ],
+        "radar": None if snap.radar is None else {
+            "source": snap.radar.source,
+            "station": snap.radar.station,
+            "frame_at": snap.radar.frame_at.isoformat() if snap.radar.frame_at else None,
+            "age_secs": snap.radar.age_secs,
+            "note": snap.radar.note,
+            "stale": snap.radar.stale,
+        },
+        "tide": None if snap.tide is None else {
+            "station_id": snap.tide.station_id,
+            "station_name": snap.tide.station_name,
+            "distance_km": snap.tide.distance_km,
+            "water_level_m": snap.tide.water_level_m,
+            "water_temp_c": snap.tide.water_temp_c,
+            "next_event": snap.tide.next_event,
+        },
         "spreads": [
             {
                 "field": s.field,

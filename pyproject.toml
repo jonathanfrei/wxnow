@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wxnow"
-version = "0.2.0"
+version = "0.3.0"
 description = "A terminal instrument panel for the atmosphere as it is — multiple sources, station-honest, zero forecast."
 readme = "README.md"
 requires-python = ">=3.11"

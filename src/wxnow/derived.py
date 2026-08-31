@@ -155,6 +155,45 @@ def uv_category(uvi: float | None) -> str | None:
     return "extreme"
 
 
+def point_in_ring(lat: float, lon: float, ring: list) -> bool:
+    """Ray-cast even-odd for a GeoJSON linear ring of [lon, lat] pairs."""
+    inside = False
+    n = len(ring)
+    if n < 3:
+        return False
+    j = n - 1
+    for i in range(n):
+        xi, yi = float(ring[i][0]), float(ring[i][1])
+        xj, yj = float(ring[j][0]), float(ring[j][1])
+        intersects = ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def point_in_geojson(lat: float, lon: float, geom: dict | None) -> bool | None:
+    """True if pin is inside, False if outside, None if untestable."""
+    if not geom or not isinstance(geom, dict):
+        return None
+    gtype = (geom.get("type") or "").lower()
+    coords = geom.get("coordinates")
+    if not coords:
+        return None
+    rings: list[list] = []
+    if gtype == "polygon":
+        rings.append(coords[0] if coords else [])
+    elif gtype == "multipolygon":
+        for poly in coords:
+            if poly:
+                rings.append(poly[0])
+    else:
+        return None
+    return any(point_in_ring(lat, lon, ring) for ring in rings if ring)
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)

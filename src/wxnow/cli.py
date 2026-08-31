@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", dest="line_format", choices=["plain", "waybar", "tmux", "polybar"], help="one-line skin")
     p.add_argument("--metrics", action="store_true", help="Prometheus / OpenMetrics text")
     p.add_argument("--compare", metavar="A,B", help="diff two pins (queries or favorites)")
+    p.add_argument("--mosaic", nargs="?", const="favorites", metavar="Q,Q", help="watch-list cards (favorites if omitted)")
     p.add_argument("--preset", choices=["default", "aviation", "marine", "fire", "running"])
     p.add_argument("--metar", action="store_true", help="raw METAR only")
     p.add_argument("--watch", action="store_true", help="refresh loop (card / json / one-line)")
@@ -115,12 +116,37 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
             else:
                 if changed or first:
                     render_card(snap, cfg.units)
+            if changed:
+                from wxnow.notify import emit, evaluate
+                emit(evaluate(snap, cfg))
             first = False
         except KeyboardInterrupt:
             return
         except Exception as exc:
             print(f"wxnow: {exc}", file=sys.stderr)
         await asyncio.sleep(max(30, cfg.refresh_secs))
+
+
+async def _mosaic_cmd(args: argparse.Namespace, cfg: Config) -> None:
+    from wxnow.engine import fetch_mosaic
+    raw = args.mosaic
+    if raw in {None, "favorites", ""}:
+        qs = list(cfg.favorites)
+    else:
+        qs = [x.strip() for x in raw.split(",") if x.strip()]
+    if not qs:
+        raise ValueError("no locations — pin favorites or pass --mosaic KTUL,LIRN")
+    from wxnow.format import age_clock, fmt_temp
+    snaps = await fetch_mosaic(qs, cfg, offline=args.offline)
+    for snap in snaps:
+        o = snap.primary()
+        if o is None:
+            print(f"{snap.pin.name}  no obs")
+            continue
+        t = fmt_temp(o.temperature_c, cfg.units, nowcast=o.kind != "observation")
+        age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+        flag = "  ⚠" if snap.alerts else ""
+        print(f"{snap.pin.name}  {t}  {o.source_label}  {age}{flag}")
 
 
 async def _compare(args: argparse.Namespace, cfg: Config) -> None:
@@ -142,6 +168,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.compare:
         try:
             asyncio.run(_compare(args, cfg))
+        except KeyboardInterrupt:
+            return 0
+        except Exception as exc:
+            print(f"wxnow: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    if args.mosaic is not None:
+        try:
+            asyncio.run(_mosaic_cmd(args, cfg))
         except KeyboardInterrupt:
             return 0
         except Exception as exc:

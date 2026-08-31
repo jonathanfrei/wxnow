@@ -31,6 +31,9 @@ class Config:
     fill: dict[str, str] = field(default_factory=lambda: {"aqi": "open-meteo-aq", "uv": "open-meteo-aq"})
     preset: str = "default"  # default | aviation | marine | fire | running
     line_format: str = "plain"  # plain | waybar | tmux | polybar
+    notify_gust_kt: float | None = 40.0
+    notify_aqi: float | None = 150.0
+    notify_alert_severity: str = "severe"
     contact: str = "wxnow@localhost"
     user_agent: str = DEFAULT_UA
     path: Path | None = None
@@ -75,6 +78,7 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
     loc = data.get("location") or {}
     src = data.get("sources") or {}
     disp = data.get("display") or {}
+    ntf = data.get("notify") or {}
     if g.get("units") in {"metric", "imperial", "aviation"}:
         cfg.units = g["units"]
     if "refresh_secs" in g:
@@ -107,6 +111,12 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.preset = str(disp["preset"])
     if disp.get("line"):
         cfg.line_format = str(disp["line"])
+    if "gust_kt" in ntf:
+        cfg.notify_gust_kt = float(ntf["gust_kt"]) if ntf["gust_kt"] is not None else None
+    if "aqi" in ntf:
+        cfg.notify_aqi = float(ntf["aqi"]) if ntf["aqi"] is not None else None
+    if ntf.get("alert_severity"):
+        cfg.notify_alert_severity = str(ntf["alert_severity"]).lower()
 
 
 def save_config(cfg: Config) -> None:
@@ -144,6 +154,11 @@ hero = {toml_str(cfg.hero)}
 preset = {toml_str(cfg.preset)}
 line = {toml_str(cfg.line_format)}
 show_raw = {"true" if cfg.show_raw else "false"}
+
+[notify]
+gust_kt = {cfg.notify_gust_kt if cfg.notify_gust_kt is not None else "false"}
+aqi = {cfg.notify_aqi if cfg.notify_aqi is not None else "false"}
+alert_severity = {toml_str(cfg.notify_alert_severity)}
 """
     p.write_text(text)
 
@@ -175,4 +190,9 @@ hero = "gauges"
 preset = "default"        # default | aviation | marine | fire | running
 line = "plain"            # plain | waybar | tmux
 show_raw = true
+
+[notify]
+gust_kt = 40
+aqi = 150
+alert_severity = "severe"
 """

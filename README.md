@@ -49,6 +49,8 @@ wxnow --metrics KTUL           # Prometheus / OpenMetrics
 wxnow --compare KTUL,LIRN
 wxnow --preset running KTUL
 wxnow --jsonl --watch KTUL
+wxnow --mosaic
+wxnow --mosaic KTUL,LIRN
 wxnow --metar KTUL
 wxnow --units imperial
 wxnow --offline
@@ -66,6 +68,7 @@ wxnow --print-config
 | `u` | Units (metric / imperial / aviation) |
 | `r` | Refresh now |
 | `p` | Pin / save location |
+| `w` | Watch mosaic (favorites) |
 | `enter` | Source matrix (observations side by side) |
 | `m` | Toggle raw METAR |
 | `a` | Alerts full text |
