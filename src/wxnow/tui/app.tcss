@@ -21,10 +21,12 @@ Screen {
 #board {
     height: 1fr;
     background: $bg;
+    overflow-y: hidden;
 }
 
 #scroll-hint {
-    height: 1;
+    display: none;
+    height: 0;
     padding: 0 2;
     color: $muted;
     background: $bg;
@@ -38,7 +40,7 @@ Screen {
 }
 
 #hero-row {
-    height: 6;
+    height: 5;
     layout: horizontal;
     padding: 0 1;
 }
@@ -65,10 +67,10 @@ Screen {
 #gauges {
     layout: grid;
     grid-size: 6 1;
-    grid-gutter: 1 1;
-    height: 7;
+    grid-gutter: 0 1;
+    height: 6;
     padding: 0 1;
-    margin-top: 1;
+    margin-top: 0;
 }
 
 .gauge {
@@ -81,9 +83,9 @@ Screen {
 
 #mid-row {
     layout: horizontal;
-    height: 8;
+    height: 6;
     padding: 0 1;
-    margin-top: 1;
+    margin-top: 0;
 }
 
 #sky, #windprecip {
@@ -101,9 +103,9 @@ Screen {
 
 #context-row {
     layout: horizontal;
-    height: 5;
+    height: 4;
     padding: 0 1;
-    margin-top: 1;
+    margin-top: 0;
 }
 
 #radar, #tide {
@@ -124,14 +126,15 @@ Screen {
     background: $card;
     color: $ink;
     padding: 0 1 0 1;
-    margin: 1 1 0 1;
-    height: 9;
+    margin: 0 1 0 1;
+    height: 1fr;
+    min-height: 6;
 }
 
 #alerts {
     height: 1;
     padding: 0 2;
-    margin-top: 1;
+    margin-top: 0;
     color: $muted;
     background: $bg;
 }
@@ -171,7 +174,7 @@ Footer {
 
 /* search / help / alerts / explain */
 
-SearchScreen, HelpScreen, AlertScreen, ExplainScreen {
+SearchScreen, HelpScreen, AlertScreen, ExplainScreen, PinsScreen {
     align: center middle;
     background: rgba(8, 12, 18, 0.82);
 }
@@ -254,9 +257,20 @@ DataTable > .datatable--cursor {
     color: $ink;
 }
 
+Screen.compact #board,
+Screen.short #board {
+    overflow-y: auto;
+}
+
+Screen.compact #scroll-hint,
+Screen.short #scroll-hint {
+    display: block;
+    height: 1;
+}
+
 Screen.compact #gauges {
     grid-size: 3 2;
-    height: 12;
+    height: 10;
 }
 
 Screen.compact #hero-row {
@@ -292,25 +306,9 @@ Screen.compact #tide {
     margin: 1 0 0 0;
 }
 
-Screen.wide #hero-row {
-    height: 8;
-}
-
-Screen.wide #gauges {
-    height: 9;
-}
-
-Screen.tall #mid-row {
-    height: 12;
-}
-
-Screen.tall #context-row {
-    height: 7;
-}
-
+Screen.wide #sources,
 Screen.tall #sources {
     height: 1fr;
-    min-height: 12;
 }
 
 #mosaic-grid {
