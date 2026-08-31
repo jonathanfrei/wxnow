@@ -1,0 +1,353 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Grid, Horizontal, Vertical
+from textual.reactive import reactive
+from textual.theme import Theme
+from textual.widgets import Footer, Static
+
+from wxnow.config import Config, save_config
+from wxnow.engine import adaptive_refresh, fetch_snapshot
+from wxnow.format import clock, copy_summary
+from wxnow.http import Http
+from wxnow.cache import DiskCache
+from wxnow.models import Snapshot
+from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
+from wxnow.tui.widgets import (
+    alerts_markup, conflict_markup, gauge_aqi, gauge_humidity, gauge_pressure,
+    gauge_uv, gauge_vis, gauge_wind, header_line, hero_markup, metar_line,
+    sky_markup, sources_markup, station_markup, wind_precip_markup,
+)
+from wxnow.units import Units, next_units
+from wxnow.explain import explain
+
+
+CSS_PATH = Path(__file__).parent / "app.tcss"
+
+WXNOW_DARK = Theme(
+    name="wxnow-dark",
+    primary="#7ad0f0",
+    secondary="#5fdc82",
+    warning="#f0c35a",
+    error="#ff8a72",
+    success="#5fdc82",
+    accent="#7ad0f0",
+    foreground="#e8eef4",
+    background="#0b1018",
+    surface="#161d28",
+    panel="#161d28",
+    dark=True,
+)
+
+
+class Pane(Static):
+    """Focusable dashboard region. Tab here, then press e."""
+
+    can_focus = True
+
+    def __init__(self, *args, field: str = "temperature", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.field = field
+
+
+class WxNowApp(App):
+    """Terminal instrument panel for the atmosphere as it is."""
+
+    CSS_PATH = CSS_PATH
+    TITLE = "wxnow · atmospheric status"
+    BINDINGS = [
+        Binding("/", "search", "search"),
+        Binding("s", "cycle_source", "sources"),
+        Binding("u", "cycle_units", "units"),
+        Binding("r", "refresh", "refresh"),
+        Binding("p", "pin", "pin"),
+        Binding("m", "raw", "raw METAR"),
+        Binding("a", "alerts", "alerts"),
+        Binding("tab", "focus_next", "panes"),
+        Binding("e", "explain", "explain"),
+        Binding("enter", "matrix", "matrix", show=False),
+        Binding("c", "copy", "copy", show=False),
+        Binding("question_mark", "help", "help", key_display="?"),
+        Binding("q", "quit", "quit"),
+        Binding("1", "fav('1')", "1", show=False),
+        Binding("2", "fav('2')", "2", show=False),
+        Binding("3", "fav('3')", "3", show=False),
+        Binding("4", "fav('4')", "4", show=False),
+        Binding("5", "fav('5')", "5", show=False),
+        Binding("6", "fav('6')", "6", show=False),
+        Binding("7", "fav('7')", "7", show=False),
+        Binding("8", "fav('8')", "8", show=False),
+        Binding("9", "fav('9')", "9", show=False),
+    ]
+
+    units: reactive[str] = reactive("metric")
+    paused: bool = False
+
+    def __init__(
+        self,
+        cfg: Config,
+        query: str | None,
+        *,
+        http: Http,
+        offline: bool = False,
+    ) -> None:
+        super().__init__()
+        self.register_theme(WXNOW_DARK)
+        self.theme = "wxnow-dark"
+        self.cfg = cfg
+        self.query = query
+        self.http = http
+        self.offline = offline
+        self.snap: Snapshot | None = None
+        self.units = cfg.units
+        self._refresh_after = cfg.refresh_secs
+        self._last_refresh_at: datetime | None = None
+        self._tick = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(id="header")
+            with Horizontal(id="hero-row"):
+                yield Pane(id="hero", field="temperature")
+                yield Pane(id="station", field="station")
+            with Grid(id="gauges"):
+                yield Pane(id="g-hum", field="humidity", classes="gauge")
+                yield Pane(id="g-pres", field="pressure", classes="gauge")
+                yield Pane(id="g-wind", field="wind", classes="gauge")
+                yield Pane(id="g-vis", field="visibility", classes="gauge")
+                yield Pane(id="g-uv", field="uv", classes="gauge")
+                yield Pane(id="g-aqi", field="aqi", classes="gauge")
+            with Horizontal(id="mid-row"):
+                yield Pane(id="sky", field="sky")
+                yield Pane(id="windprecip", field="precip")
+            yield Pane(id="sources", field="sources")
+            yield Static(id="conflict")
+            yield Static(id="alerts")
+            yield Static(id="metar")
+        yield Footer()
+
+    async def on_mount(self) -> None:
+        self.theme = "wxnow-dark"
+        self._apply_theme(self.cfg.theme)
+        self.query_one("#header", Static).update("fetching observations…")
+        self.set_interval(1.0, self._on_tick)
+        await self._refresh()
+        try:
+            self.query_one("#hero", Pane).focus()
+        except Exception:
+            pass
+
+    def on_unmount(self) -> None:
+        # http closed by CLI after app exits
+        pass
+
+    def on_app_blur(self, event) -> None:  # type: ignore[no-untyped-def]
+        self.paused = True
+
+    def on_app_focus(self, event) -> None:  # type: ignore[no-untyped-def]
+        self.paused = False
+
+    async def _on_tick(self) -> None:
+        self._tick += 1
+        if self.snap is not None:
+            self._paint_header()
+        if self.paused:
+            return
+        if self._last_refresh_at is None:
+            return
+        age = (datetime.now(timezone.utc) - self._last_refresh_at).total_seconds()
+        if age >= self._refresh_after:
+            await self._refresh()
+
+    async def _refresh(self) -> None:
+        try:
+            snap = await fetch_snapshot(
+                self.query, self.cfg, http=self.http, offline=self.offline,
+            )
+        except Exception as exc:
+            self.query_one("#header", Static).update(f"[red]fetch failed:[/] {exc}")
+            return
+        self.snap = snap
+        self._last_refresh_at = datetime.now(timezone.utc)
+        self._refresh_after = adaptive_refresh(snap, self.cfg.refresh_secs)
+        self._apply_theme(self._auto_theme(snap))
+        self._paint(snap)
+
+    def _auto_theme(self, snap: Snapshot) -> str:
+        # Auto used to follow the sun and flipped the app to a light ink
+        # color on still-dark cards — unreadable. Night is the product.
+        if self.cfg.theme in {"auto", "night", "", None}:
+            return "night"
+        return self.cfg.theme
+
+    def _apply_theme(self, theme: str) -> None:
+        screen = self.screen
+        screen.remove_class("theme-day", "theme-mono", "theme-high", "theme-night")
+        if theme == "day":
+            screen.add_class("theme-day")
+            self.theme = "textual-light"
+        elif theme in {"mono", "mono printer"}:
+            screen.add_class("theme-mono")
+            self.theme = "wxnow-dark"
+        elif theme in {"high-contrast", "high"}:
+            screen.add_class("theme-high")
+            self.theme = "wxnow-dark"
+        else:
+            self.theme = "wxnow-dark"
+
+    def _paint(self, snap: Snapshot) -> None:
+        units: Units = self.units  # type: ignore[assignment]
+        self._layout_classes()
+        compact = self.size.width < 100 if self.size else False
+        o = snap.primary()
+        self._paint_header()
+        self.query_one("#hero", Static).update(hero_markup(snap, units, compact=compact))
+        self.query_one("#station", Static).update(station_markup(snap, units))
+        if o:
+            self.query_one("#g-hum", Static).update(gauge_humidity(o))
+            self.query_one("#g-pres", Static).update(gauge_pressure(o, units))
+            self.query_one("#g-wind", Static).update(gauge_wind(o, units))
+            self.query_one("#g-vis", Static).update(gauge_vis(o, units))
+            self.query_one("#g-uv", Static).update(gauge_uv(o))
+            self.query_one("#g-aqi", Static).update(gauge_aqi(o))
+            self.query_one("#sky", Static).update(sky_markup(o, units))
+            self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
+        self.query_one("#sources", Static).update(sources_markup(snap, units))
+        self.query_one("#conflict", Static).update(conflict_markup(snap, units))
+        text, cls = alerts_markup(snap)
+        alerts = self.query_one("#alerts", Static)
+        alerts.update(text)
+        alerts.set_class(cls in {"hot", "crit"}, "hot")
+        alerts.set_class(cls == "crit", "crit")
+        metar = self.query_one("#metar", Static)
+        if self.cfg.show_raw:
+            metar.update(metar_line(snap))
+            metar.display = True
+        else:
+            metar.update("")
+            metar.display = False
+
+    def _layout_classes(self) -> None:
+        w = self.size.width if self.size else 120
+        h = self.size.height if self.size else 40
+        self.screen.set_class(w < 110, "compact")
+        self.screen.set_class(w < 90, "narrow")
+        self.screen.set_class(h < 30, "short")
+
+    def _paint_header(self) -> None:
+        snap = self.snap
+        if snap is None:
+            return
+        ago = ""
+        if self._last_refresh_at:
+            sec = int((datetime.now(timezone.utc) - self._last_refresh_at).total_seconds())
+            ago = f"refresh {sec}s ago  ·  "
+        line = header_line(snap, clock(datetime.now(timezone.utc), snap.pin))
+        # inject refresh age
+        line = line.replace("sources ok", f"{ago}sources ok")
+        self.query_one("#header", Static).update(line)
+
+    async def action_refresh(self) -> None:
+        self.query_one("#header", Static).update("refreshing…")
+        await self._refresh()
+
+    def action_cycle_units(self) -> None:
+        self.units = next_units(self.units)  # type: ignore[arg-type]
+        self.cfg.units = self.units  # type: ignore[assignment]
+        if self.snap:
+            self._paint(self.snap)
+        self.notify(f"units: {self.units}")
+
+    def action_cycle_source(self) -> None:
+        if not self.snap or not self.snap.observations:
+            return
+        ids = [o.source_id for o in self.snap.observations]
+        cur = self.snap.primary_id or ids[0]
+        nxt = ids[(ids.index(cur) + 1) % len(ids)] if cur in ids else ids[0]
+        self.snap.primary_id = nxt
+        self.cfg.primary = nxt
+        self._paint(self.snap)
+        self.notify(f"primary: {nxt}")
+
+    def action_matrix(self) -> None:
+        if self.snap:
+            self.push_screen(MatrixScreen(self.snap, self.units))  # type: ignore[arg-type]
+
+    def action_raw(self) -> None:
+        self.cfg.show_raw = not self.cfg.show_raw
+        if self.snap:
+            self._paint(self.snap)
+
+    def action_alerts(self) -> None:
+        if self.snap:
+            self.push_screen(AlertScreen(self.snap))
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
+
+    def action_explain(self) -> None:
+        if not self.snap:
+            return
+        focused = self.focused
+        field = getattr(focused, "field", None) or "temperature"
+        title, body = explain(field, self.snap, self.units)  # type: ignore[arg-type]
+        self.push_screen(ExplainScreen(title, body))
+
+    def action_copy(self) -> None:
+        if not self.snap:
+            return
+        text = copy_summary(self.snap, self.units)  # type: ignore[arg-type]
+        self.copy_to_clipboard(text)
+        self.notify("copied summary")
+
+    def action_pin(self) -> None:
+        q = self.query or (self.snap.pin.query if self.snap else None)
+        if not q:
+            return
+        if q not in self.cfg.favorites:
+            self.cfg.favorites.append(q)
+            if self.cfg.default_location is None:
+                self.cfg.default_location = q
+            save_config(self.cfg)
+            self.notify(f"pinned {q}  ({len(self.cfg.favorites)})")
+        else:
+            self.notify(f"{q} already pinned")
+
+    def action_fav(self, n: str) -> None:
+        idx = int(n) - 1
+        if idx < len(self.cfg.favorites):
+            self.run_worker(self._goto(self.cfg.favorites[idx]), exclusive=True)
+
+    async def _goto(self, q: str) -> None:
+        self.query = q
+        self.query_one("#header", Static).update(f"loading {q}…")
+        await self._refresh()
+
+    def action_search(self) -> None:
+        def _cb(q: str | None) -> None:
+            if q:
+                self.run_worker(self._goto(q), exclusive=True)
+        self.push_screen(SearchScreen(), _cb)
+
+    def on_resize(self, event) -> None:  # type: ignore[no-untyped-def]
+        if not self.is_mounted:
+            return
+        self._layout_classes()
+        if self.snap:
+            try:
+                self._paint(self.snap)
+            except Exception:
+                pass
+
+
+async def run_tui(cfg: Config, query: str | None, *, offline: bool = False) -> None:
+    http = Http(DiskCache(), user_agent=cfg.ua, offline=offline)
+    try:
+        app = WxNowApp(cfg, query, http=http, offline=offline)
+        await app.run_async()
+    finally:
+        await http.aclose()

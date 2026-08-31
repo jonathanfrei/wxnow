@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wxnow"
+version = "0.1.0"
+description = "A terminal instrument panel for the atmosphere as it is — multiple sources, station-honest, zero forecast."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Jonathan Frei"}]
+keywords = ["weather", "metar", "tui", "observation", "nws"]
+urls = {Homepage = "https://github.com/jonathanfrei/wxnow", Repository = "https://github.com/jonathanfrei/wxnow"}
+dependencies = [
+    "textual>=8.0",
+    "httpx>=0.27",
+    "platformdirs>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+wxnow = "wxnow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wxnow = ["tui/*.tcss"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import os
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from platformdirs import user_config_dir
+
+from wxnow.http import DEFAULT_UA
+from wxnow.units import Units
+
+
+DEFAULT_ENABLED = ["metar", "nws", "open-meteo", "open-meteo-aq"]
+
+
+@dataclass
+class Config:
+    units: Units = "metric"
+    refresh_secs: int = 120
+    reduced_motion: bool = False
+    theme: str = "auto"  # auto | night | day | high-contrast | colorblind | mono
+    hero: str = "gauges"
+    show_raw: bool = True
+    default_location: str | None = None
+    favorites: list[str] = field(default_factory=list)
+    primary: str = "metar"
+    enabled: list[str] = field(default_factory=lambda: list(DEFAULT_ENABLED))
+    keys: dict[str, str] = field(default_factory=dict)
+    contact: str = "wxnow@localhost"
+    user_agent: str = DEFAULT_UA
+    path: Path | None = None
+
+    @property
+    def ua(self) -> str:
+        return f"wxnow/0.1.0 ({self.contact}; observation-console)"
+
+
+def config_path() -> Path:
+    override = os.environ.get("WXNOW_CONFIG")
+    if override:
+        return Path(override)
+    return Path(user_config_dir("wxnow")) / "config.toml"
+
+
+def load_config(path: Path | None = None) -> Config:
+    p = path or config_path()
+    cfg = Config(path=p)
+    if p.exists():
+        data = tomllib.loads(p.read_text())
+        _apply(cfg, data)
+    # env overrides
+    if os.environ.get("WXNOW_UNITS") in {"metric", "imperial", "aviation"}:
+        cfg.units = os.environ["WXNOW_UNITS"]  # type: ignore[assignment]
+    if os.environ.get("WXNOW_THEME"):
+        cfg.theme = os.environ["WXNOW_THEME"]
+    if os.environ.get("WXNOW_PRIMARY"):
+        cfg.primary = os.environ["WXNOW_PRIMARY"]
+    if os.environ.get("WXNOW_CONTACT"):
+        cfg.contact = os.environ["WXNOW_CONTACT"]
+    for key in ("openweather", "visualcrossing", "weatherapi", "tomorrow", "accuweather", "pirate"):
+        env = os.environ.get(f"WXNOW_{key.upper()}_KEY") or os.environ.get(f"{key.upper()}_API_KEY")
+        if env:
+            cfg.keys[key] = env
+    return cfg
+
+
+def _apply(cfg: Config, data: dict[str, Any]) -> None:
+    g = data.get("general") or {}
+    loc = data.get("location") or {}
+    src = data.get("sources") or {}
+    disp = data.get("display") or {}
+    if g.get("units") in {"metric", "imperial", "aviation"}:
+        cfg.units = g["units"]
+    if "refresh_secs" in g:
+        cfg.refresh_secs = int(g["refresh_secs"])
+    if "reduced_motion" in g:
+        cfg.reduced_motion = bool(g["reduced_motion"])
+    if g.get("contact"):
+        cfg.contact = str(g["contact"])
+    if loc.get("default"):
+        cfg.default_location = str(loc["default"])
+    if loc.get("favorites"):
+        cfg.favorites = [str(x) for x in loc["favorites"]]
+    if src.get("primary"):
+        cfg.primary = str(src["primary"])
+    if src.get("enabled"):
+        cfg.enabled = [str(x) for x in src["enabled"]]
+    keys = src.get("keys") or {}
+    if isinstance(keys, dict):
+        cfg.keys.update({str(k): str(v) for k, v in keys.items() if v})
+    if disp.get("theme"):
+        cfg.theme = str(disp["theme"])
+    if disp.get("hero"):
+        cfg.hero = str(disp["hero"])
+    if "show_raw" in disp:
+        cfg.show_raw = bool(disp["show_raw"])
+
+
+def save_config(cfg: Config) -> None:
+    p = cfg.path or config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    favs = ", ".join(toml_str(x) for x in cfg.favorites)
+    keys = ""
+    if cfg.keys:
+        inner = ", ".join(f"{k} = {toml_str(v)}" for k, v in cfg.keys.items())
+        keys = f"keys = {{ {inner} }}\n"
+    enabled = ", ".join(toml_str(x) for x in cfg.enabled)
+    default = toml_str(cfg.default_location) if cfg.default_location else '""'
+    text = f"""# wxnow — observation console
+[general]
+units = {toml_str(cfg.units)}
+refresh_secs = {int(cfg.refresh_secs)}
+reduced_motion = {"true" if cfg.reduced_motion else "false"}
+contact = {toml_str(cfg.contact)}
+
+[location]
+default = {default}
+favorites = [{favs}]
+
+[sources]
+primary = {toml_str(cfg.primary)}
+enabled = [{enabled}]
+{keys}
+[display]
+theme = {toml_str(cfg.theme)}
+hero = {toml_str(cfg.hero)}
+show_raw = {"true" if cfg.show_raw else "false"}
+"""
+    p.write_text(text)
+
+
+def toml_str(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+SAMPLE = """# wxnow — observation console
+[general]
+units = "metric"          # or imperial, aviation
+refresh_secs = 120
+reduced_motion = false
+contact = "you@example.com"
+
+[location]
+default = "KTUL"
+favorites = ["KTUL", "KBOS"]
+
+[sources]
+primary = "metar"
+enabled = ["nws", "metar", "open-meteo", "open-meteo-aq"]
+# keys = { openweather = "…", visualcrossing = "…" }
+
+[display]
+theme = "auto"            # auto | night | day | high-contrast | colorblind | mono
+hero = "gauges"
+show_raw = true
+"""

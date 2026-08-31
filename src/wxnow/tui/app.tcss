@@ -1,0 +1,293 @@
+/* Forced avionics night palette. Every panel sets its own ink so a light
+   terminal or a leftover "day" class cannot inherit dark-on-dark. */
+
+$bg: #0b1018;
+$card: #161d28;
+$border: #4a5a6c;
+$ink: #e8eef4;
+$muted: #a8b6c4;
+$cyan: #7ad0f0;
+$green: #5fdc82;
+$amber: #f0c35a;
+$red: #ff8a72;
+$violet: #cbb6f0;
+
+Screen {
+    background: $bg;
+    color: $ink;
+    layout: vertical;
+}
+
+#header {
+    height: 1;
+    padding: 0 1;
+    color: $ink;
+    background: $bg;
+}
+
+#hero-row {
+    height: 6;
+    layout: horizontal;
+    padding: 0 1;
+}
+
+#hero {
+    width: 3fr;
+    height: 100%;
+    padding: 0 1;
+    color: $ink;
+    background: $bg;
+    border: round $bg;
+}
+
+#station {
+    width: 2fr;
+    height: 100%;
+    border: round $border;
+    background: $card;
+    color: $ink;
+    padding: 0 1;
+    margin: 0 0 0 1;
+}
+
+#gauges {
+    layout: grid;
+    grid-size: 6 1;
+    grid-gutter: 1 1;
+    height: 7;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.gauge {
+    border: round $border;
+    background: $card;
+    color: $ink;
+    padding: 0 1;
+    height: 100%;
+}
+
+#mid-row {
+    layout: horizontal;
+    height: 8;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#sky, #windprecip {
+    border: round $border;
+    background: $card;
+    color: $ink;
+    padding: 0 1;
+    width: 1fr;
+    height: 100%;
+}
+
+#windprecip {
+    margin-left: 1;
+}
+
+#sources {
+    border: round $border;
+    background: $card;
+    color: $ink;
+    padding: 0 1 0 1;
+    margin: 1 1 0 1;
+    height: 9;
+}
+
+#alerts {
+    height: 1;
+    padding: 0 2;
+    margin-top: 1;
+    color: $muted;
+    background: $bg;
+}
+
+#alerts.hot {
+    color: $amber;
+    text-style: bold;
+}
+
+#alerts.crit {
+    color: $red;
+    text-style: bold;
+}
+
+#metar {
+    height: 1;
+    padding: 0 2;
+    color: $muted;
+    background: $bg;
+}
+
+#conflict {
+    height: 1;
+    padding: 0 2;
+    color: $amber;
+    background: $bg;
+}
+
+Pane:focus, #hero:focus, #station:focus, .gauge:focus, #sky:focus, #windprecip:focus, #sources:focus {
+    border: round $cyan;
+}
+
+Footer {
+    background: #070a10;
+    color: $ink;
+}
+
+/* search / help / alerts / explain */
+
+SearchScreen, HelpScreen, AlertScreen, ExplainScreen {
+    align: center middle;
+    background: rgba(8, 12, 18, 0.82);
+}
+
+.search-box, .help-box, .alert-box, .explain-box {
+    background: $card;
+    color: $ink;
+    border: round $cyan;
+    padding: 1 2;
+    width: 72;
+    max-width: 90%;
+}
+
+.help-box {
+    width: 80;
+    height: auto;
+}
+
+.alert-box {
+    width: 86;
+    height: 24;
+}
+
+/* matrix drill-down */
+
+MatrixScreen {
+    layout: vertical;
+    background: $bg;
+    color: $ink;
+}
+
+#matrix-head {
+    height: 1;
+    padding: 0 1;
+    color: $ink;
+    background: $bg;
+}
+
+#matrix-body {
+    layout: horizontal;
+    height: 1fr;
+    padding: 0 1;
+}
+
+#matrix-table {
+    width: 3fr;
+    height: 100%;
+    border: round $border;
+    background: $card;
+    color: $ink;
+}
+
+#matrix-side {
+    width: 2fr;
+    height: 100%;
+    border: round $border;
+    background: $card;
+    color: $ink;
+    margin-left: 1;
+    padding: 0 1;
+}
+
+#raw-drawer {
+    height: 10;
+    border: round $border;
+    background: $card;
+    margin: 1 1 0 1;
+    padding: 0 1;
+    color: $muted;
+}
+
+DataTable {
+    height: 100%;
+    color: $ink;
+    background: $card;
+}
+
+DataTable > .datatable--cursor {
+    background: #243044;
+    color: $ink;
+}
+
+Screen.compact #gauges {
+    grid-size: 3 2;
+    height: 12;
+}
+
+Screen.compact #hero-row {
+    height: 7;
+}
+
+Screen.narrow #station {
+    display: none;
+}
+
+Screen.short #mid-row {
+    display: none;
+}
+
+Screen.short #gauges {
+    height: 5;
+}
+
+Screen.short #hero-row {
+    height: 5;
+}
+
+Screen.short #sources {
+    height: 1fr;
+}
+
+/* Optional explicit day theme: light cards, dark ink. Auto no longer picks this. */
+.theme-day {
+    background: #e8eef4;
+    color: #1c2430;
+}
+.theme-day #header,
+.theme-day #hero,
+.theme-day #alerts,
+.theme-day #metar,
+.theme-day #conflict,
+.theme-day #matrix-head {
+    background: #e8eef4;
+    color: #1c2430;
+}
+.theme-day #station,
+.theme-day .gauge,
+.theme-day #sky,
+.theme-day #windprecip,
+.theme-day #sources,
+.theme-day #matrix-table,
+.theme-day #matrix-side,
+.theme-day #raw-drawer,
+.theme-day DataTable {
+    background: #f7fafc;
+    color: #1c2430;
+    border: round #9aa8b6;
+}
+.theme-day Footer {
+    background: #d8e0e8;
+    color: #1c2430;
+}
+
+.theme-mono {
+    background: #000;
+    color: #d0d0d0;
+}
+.theme-high {
+    background: #000;
+    color: #fff;
+}
