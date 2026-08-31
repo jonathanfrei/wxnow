@@ -157,15 +157,15 @@ Imperative, product-language: `Fix dark-card contrast for gauge labels`, not `up
 
 ---
 
-## 7. Roadmap (do not sneak into v1)
+## 7. Roadmap
 
-**v1 (this tree)** — place/ICAO/coords, METAR + Open-Meteo + NWS, hero + gauges + station offset + age, alerts in effect, TUI + card + JSON, units/theme/refresh/favorites, source conflict strip, matrix, explain.
+**v1** — place/ICAO/coords, METAR + Open-Meteo + NWS, hero + gauges + station offset + age, alerts, TUI + card + JSON, conflict strip, matrix, explain.
 
-**v2** — source comparison polish, more AQI/UV/lightning, PWS / Home Assistant, pressure history as a first-class sparkline everywhere, Waybar line, Prometheus.
+**v2 (0.2.0, this tree)** — source registry in `sources/registry.py`; AQI/UV as their own observation + `sources.fill` (do not glue AQ onto METAR); matrix column-select + observation-only history; `--metrics`, `--compare`, `--jsonl`, Waybar/tmux `--format`; presets `default|aviation|marine|fire|running`; search recents. Still open: Pirate/WeatherAPI adapters, PWS/HA, AirNow/WAQI, lightning.
 
-**v3** — radar snapshot (current, not a loop of what’s coming), coastal tides, multi-site mosaic, threshold notifications.
+**v3** — radar snapshot (current frame only), CO-OPS tides + buoy, 2–6 pin mosaic, threshold notify, alert polygons.
 
-Presets (aviation / marine / fire / running) that *reorder the same now-data* are in-scope later. They must not add forecast fields.
+Presets reorder the same now-data. They must not add forecast fields.
 
 ---
 

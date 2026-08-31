@@ -28,13 +28,17 @@ class Config:
     primary: str = "metar"
     enabled: list[str] = field(default_factory=lambda: list(DEFAULT_ENABLED))
     keys: dict[str, str] = field(default_factory=dict)
+    fill: dict[str, str] = field(default_factory=lambda: {"aqi": "open-meteo-aq", "uv": "open-meteo-aq"})
+    preset: str = "default"  # default | aviation | marine | fire | running
+    line_format: str = "plain"  # plain | waybar | tmux | polybar
     contact: str = "wxnow@localhost"
     user_agent: str = DEFAULT_UA
     path: Path | None = None
 
     @property
     def ua(self) -> str:
-        return f"wxnow/0.1.0 ({self.contact}; observation-console)"
+        from wxnow import __version__
+        return f"wxnow/{__version__} ({self.contact}; observation-console)"
 
 
 def config_path() -> Path:
@@ -87,6 +91,9 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.primary = str(src["primary"])
     if src.get("enabled"):
         cfg.enabled = [str(x) for x in src["enabled"]]
+    fill = src.get("fill") or {}
+    if isinstance(fill, dict) and fill:
+        cfg.fill.update({str(k): str(v) for k, v in fill.items() if v})
     keys = src.get("keys") or {}
     if isinstance(keys, dict):
         cfg.keys.update({str(k): str(v) for k, v in keys.items() if v})
@@ -96,6 +103,10 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.hero = str(disp["hero"])
     if "show_raw" in disp:
         cfg.show_raw = bool(disp["show_raw"])
+    if disp.get("preset"):
+        cfg.preset = str(disp["preset"])
+    if disp.get("line"):
+        cfg.line_format = str(disp["line"])
 
 
 def save_config(cfg: Config) -> None:
@@ -108,6 +119,10 @@ def save_config(cfg: Config) -> None:
         keys = f"keys = {{ {inner} }}\n"
     enabled = ", ".join(toml_str(x) for x in cfg.enabled)
     default = toml_str(cfg.default_location) if cfg.default_location else '""'
+    fill_toml = ""
+    if cfg.fill:
+        inner = ", ".join(f"{k} = {toml_str(v)}" for k, v in cfg.fill.items())
+        fill_toml = f"fill = {{ {inner} }}\n"
     text = f"""# wxnow — observation console
 [general]
 units = {toml_str(cfg.units)}
@@ -122,10 +137,12 @@ favorites = [{favs}]
 [sources]
 primary = {toml_str(cfg.primary)}
 enabled = [{enabled}]
-{keys}
+{keys}{fill_toml}
 [display]
 theme = {toml_str(cfg.theme)}
 hero = {toml_str(cfg.hero)}
+preset = {toml_str(cfg.preset)}
+line = {toml_str(cfg.line_format)}
 show_raw = {"true" if cfg.show_raw else "false"}
 """
     p.write_text(text)
@@ -149,10 +166,13 @@ favorites = ["KTUL", "KBOS"]
 [sources]
 primary = "metar"
 enabled = ["nws", "metar", "open-meteo", "open-meteo-aq"]
-# keys = { openweather = "…", visualcrossing = "…" }
+fill = { aqi = "open-meteo-aq", uv = "open-meteo-aq" }
+# keys = { pirate = "…", weatherapi = "…" }
 
 [display]
 theme = "auto"            # auto | night | day | high-contrast | colorblind | mono
 hero = "gauges"
+preset = "default"        # default | aviation | marine | fire | running
+line = "plain"            # plain | waybar | tmux
 show_raw = true
 """

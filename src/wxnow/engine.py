@@ -7,12 +7,10 @@ from wxnow.cache import DiskCache
 from wxnow.config import Config
 from wxnow.derived import solar_position
 from wxnow.format import is_stale
-from wxnow.geo import resolve, attach_timezone
+from wxnow.geo import resolve
 from wxnow.http import Http
-from wxnow.models import Observation, Pin, Snapshot, Spread
-from wxnow.sources.metar import fetch_metar
-from wxnow.sources.nws import fetch_nws, fetch_nws_alerts
-from wxnow.sources.open_meteo import fetch_air_quality, fetch_open_meteo
+from wxnow.models import Alert, Observation, Pin, Snapshot, Spread
+from wxnow.sources.registry import dispatch, enabled as enabled_plugins
 
 
 NEAR_KM = 40.0
@@ -34,7 +32,10 @@ def pick_primary(obs: list[Observation], preferred: str) -> str | None:
         o = by_id.get(sid)
         if o and _usable(o):
             return sid
-    return obs[0].source_id if obs else None
+    for o in obs:
+        if _usable(o):
+            return o.source_id
+    return None
 
 
 def _usable(o: Observation) -> bool:
@@ -74,18 +75,6 @@ def compute_spreads(obs: list[Observation]) -> list[Spread]:
     return out
 
 
-def _prefer_station_id(pin: Pin) -> str | None:
-    if pin.resolver in {"icao", "iata"}:
-        q = pin.query.strip().upper()
-        if len(q) == 4:
-            return q
-        # name like "KTUL · Tulsa..."
-        head = pin.name.split("·")[0].strip()
-        if len(head) == 4 and head.isalpha():
-            return head
-    return None
-
-
 async def fetch_snapshot(
     query: str | None,
     cfg: Config,
@@ -101,20 +90,11 @@ async def fetch_snapshot(
     try:
         if pin is None:
             pin = await resolve(query, http)
-        enabled = set(cfg.enabled)
-        prefer = _prefer_station_id(pin)
 
-        tasks: dict[str, asyncio.Task] = {}
-        if "metar" in enabled:
-            tasks["metar"] = asyncio.create_task(fetch_metar(pin, http, prefer_id=prefer))
-        if "nws" in enabled:
-            tasks["nws"] = asyncio.create_task(fetch_nws(pin, http))
-        if "open-meteo" in enabled:
-            tasks["open-meteo"] = asyncio.create_task(fetch_open_meteo(pin, http))
-        if "open-meteo-aq" in enabled or "open-meteo" in enabled:
-            tasks["aq"] = asyncio.create_task(fetch_air_quality(pin, http))
-        if "nws" in enabled:
-            tasks["alerts"] = asyncio.create_task(fetch_nws_alerts(pin, http))
+        plugins = enabled_plugins(cfg)
+        tasks: dict[str, asyncio.Task] = {
+            p.id: asyncio.create_task(dispatch(p, pin, http, cfg)) for p in plugins if p.fetch
+        }
 
         results: dict[str, object] = {}
         if tasks:
@@ -123,40 +103,26 @@ async def fetch_snapshot(
                 results[key] = val
 
         obs: list[Observation] = []
+        alert_rows: list[Alert] = []
         now = datetime.now(timezone.utc)
-        for sid in ("metar", "nws", "open-meteo"):
-            val = results.get(sid)
+        for p in plugins:
+            val = results.get(p.id)
             if isinstance(val, Exception):
-                warnings.append(f"{sid}: {val}")
+                warnings.append(f"{p.id}: {val}")
+                continue
+            if val is None:
+                if p.fetch is None:
+                    warnings.append(f"{p.id}: adapter not implemented")
+                continue
+            if p.produces == "alerts":
+                if isinstance(val, list):
+                    alert_rows.extend(a for a in val if isinstance(a, Alert))
                 continue
             if isinstance(val, Observation):
                 val.stale = is_stale(val.observed_at, now, val.kind)
                 obs.append(val)
 
-        aq = results.get("aq")
-        if isinstance(aq, dict) and aq:
-            # attach AQI/UV to nowcast if present, else primary later
-            target = next((o for o in obs if o.source_id == "open-meteo"), None)
-            if target is None and obs:
-                target = obs[-1]
-            if target is not None:
-                target.aqi_us = aq.get("aqi_us")
-                target.aqi_category = aq.get("aqi_category")
-                target.pm25 = _f(aq.get("pm25"))
-                target.pm10 = _f(aq.get("pm10"))
-                target.o3 = _f(aq.get("o3"))
-                target.no2 = _f(aq.get("no2"))
-                target.co = _f(aq.get("co"))
-                target.so2 = _f(aq.get("so2"))
-                target.uv_index = _f(aq.get("uv_index"))
-        elif isinstance(aq, Exception):
-            warnings.append(f"air quality: {aq}")
-
-        alerts = results.get("alerts")
-        if isinstance(alerts, Exception):
-            warnings.append(f"alerts: {alerts}")
-            alerts = []
-        alerts = _dedupe_alerts(list(alerts or []))
+        alerts = _dedupe_alerts(alert_rows)
 
         # Honest empty / distant station
         metar = next((o for o in obs if o.source_id == "metar"), None)
@@ -190,24 +156,13 @@ async def fetch_snapshot(
         primary = pick_primary(obs, cfg.primary)
         spreads = compute_spreads(obs)
 
-        # copy AQI onto primary for gauges if primary isn't the nowcast
-        primary_obs = next((o for o in obs if o.source_id == primary), None)
-        om = next((o for o in obs if o.source_id == "open-meteo"), None)
-        if primary_obs and om and primary_obs is not om:
-            if primary_obs.uv_index is None:
-                primary_obs.uv_index = om.uv_index
-            if primary_obs.aqi_us is None:
-                primary_obs.aqi_us = om.aqi_us
-                primary_obs.aqi_category = om.aqi_category
-                primary_obs.pm25 = om.pm25
-
         sun_alt = sun_az = None
         try:
             sun_alt, sun_az = solar_position(pin.lat, pin.lon, now)
         except Exception:
             pass
 
-        ok = sum(1 for o in obs if o.temperature_c is not None and not o.error)
+        ok = sum(1 for o in obs if not o.error)
         return Snapshot(
             pin=pin,
             fetched_at=now,
@@ -221,6 +176,8 @@ async def fetch_snapshot(
             sources_total=max(len(obs), ok),
             spreads=spreads,
             offline=offline,
+            fill=dict(cfg.fill),
+            preset=cfg.preset,
         )
     finally:
         if own_http:
@@ -245,15 +202,6 @@ def _dedupe_alerts(alerts: list) -> list:
         events.add(a.event)
         uniq.append(a)
     return uniq
-
-
-def _f(v: object) -> float | None:
-    if v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def adaptive_refresh(snap: Snapshot, base: int) -> int:

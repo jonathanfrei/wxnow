@@ -21,6 +21,8 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
         },
         "fetched_at": snap.fetched_at.isoformat(),
         "primary": snap.primary_id,
+        "fill": snap.fill,
+        "preset": snap.preset,
         "sources_ok": snap.sources_ok,
         "sources_total": snap.sources_total,
         "warnings": snap.warnings,
