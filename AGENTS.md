@@ -161,9 +161,11 @@ Imperative, product-language: `Fix dark-card contrast for gauge labels`, not `up
 
 **v1** — place/ICAO/coords, METAR + Open-Meteo + NWS, hero + gauges + station offset + age, alerts, TUI + card + JSON, conflict strip, matrix, explain.
 
-**v2 (0.2.0, this tree)** — source registry in `sources/registry.py`; AQI/UV as their own observation + `sources.fill` (do not glue AQ onto METAR); matrix column-select + observation-only history; `--metrics`, `--compare`, `--jsonl`, Waybar/tmux `--format`; presets `default|aviation|marine|fire|running`; search recents. Still open: Pirate/WeatherAPI adapters, PWS/HA, AirNow/WAQI, lightning.
+**v2 (0.2.0)** — source registry; AQI/UV fill-map; matrix columns; `--metrics` / `--compare` / `--jsonl` / Waybar; presets; recents.
 
-**v3** — radar snapshot (current frame only), CO-OPS tides + buoy, 2–6 pin mosaic, threshold notify, alert polygons.
+**v3 (0.3.0, this tree)** — RainViewer **current** radar frame (age + station, not a loop); NOAA CO-OPS tides when a station is within 50 km (honest empty inland); NDBC buoy/C-MAN as an observation row; `w` / `--mosaic` 2–6 pin watch list; `--watch` threshold notify (`notify.gust_kt` / `aqi` / `alert_severity`); NWS alert polygons tested against this pin.
+
+Still later: keyed Pirate/WeatherAPI adapters, PWS/HA, AirNow, lightning, SIGMET.
 
 Presets reorder the same now-data. They must not add forecast fields.
 

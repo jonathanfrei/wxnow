@@ -8,7 +8,7 @@ import httpx
 from wxnow.cache import DiskCache
 
 
-DEFAULT_UA = "wxnow/0.2.0 (wxnow@localhost; observation-console)"
+DEFAULT_UA = "wxnow/0.3.0 (wxnow@localhost; observation-console)"
 
 
 @dataclass

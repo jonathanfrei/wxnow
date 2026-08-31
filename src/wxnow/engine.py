@@ -9,7 +9,7 @@ from wxnow.derived import solar_position
 from wxnow.format import is_stale
 from wxnow.geo import resolve
 from wxnow.http import Http
-from wxnow.models import Alert, Observation, Pin, Snapshot, Spread
+from wxnow.models import Alert, Observation, Pin, RadarSnapshot, Snapshot, Spread, TideSnapshot
 from wxnow.sources.registry import dispatch, enabled as enabled_plugins
 
 
@@ -104,6 +104,8 @@ async def fetch_snapshot(
 
         obs: list[Observation] = []
         alert_rows: list[Alert] = []
+        radar = None
+        tide = None
         now = datetime.now(timezone.utc)
         for p in plugins:
             val = results.get(p.id)
@@ -117,6 +119,12 @@ async def fetch_snapshot(
             if p.produces == "alerts":
                 if isinstance(val, list):
                     alert_rows.extend(a for a in val if isinstance(a, Alert))
+                continue
+            if p.produces == "radar" and isinstance(val, RadarSnapshot):
+                radar = val
+                continue
+            if p.produces == "tide" and isinstance(val, TideSnapshot):
+                tide = val
                 continue
             if isinstance(val, Observation):
                 val.stale = is_stale(val.observed_at, now, val.kind)
@@ -178,6 +186,8 @@ async def fetch_snapshot(
             offline=offline,
             fill=dict(cfg.fill),
             preset=cfg.preset,
+            radar=radar,
+            tide=tide,
         )
     finally:
         if own_http:
@@ -202,6 +212,34 @@ def _dedupe_alerts(alerts: list) -> list:
         events.add(a.event)
         uniq.append(a)
     return uniq
+
+
+async def fetch_mosaic(
+    queries: list[str],
+    cfg: Config,
+    *,
+    http: Http | None = None,
+    offline: bool = False,
+) -> list[Snapshot]:
+    own = http is None
+    if http is None:
+        http = Http(DiskCache(), user_agent=cfg.ua, offline=offline)
+    try:
+        qs = [q for q in queries if q][:6]
+        if not qs:
+            return []
+        parts = await asyncio.gather(
+            *[fetch_snapshot(q, cfg, http=http, offline=offline) for q in qs],
+            return_exceptions=True,
+        )
+        out: list[Snapshot] = []
+        for p in parts:
+            if isinstance(p, Snapshot):
+                out.append(p)
+        return out
+    finally:
+        if own:
+            await http.aclose()
 
 
 def adaptive_refresh(snap: Snapshot, base: int) -> int:

@@ -5,7 +5,7 @@ from typing import Any
 
 from wxnow.derived import (
     apparent, ceiling_from_clouds, compass8, haversine_km, initial_bearing,
-    rh_from_temp_dew, wetbulb_stull,
+    point_in_geojson, rh_from_temp_dew, wetbulb_stull,
 )
 from wxnow.http import Http
 from wxnow.models import Alert, CloudLayer, Observation, Pin, SeriesPoint, Station
@@ -69,6 +69,8 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
             pin.name = f"{city}, {state}"
     if props.get("timeZone") and not pin.timezone:
         pin.timezone = props["timeZone"]
+    if props.get("radarStation"):
+        pin.radar_station = props["radarStation"]
 
     st_url = props.get("observationStations")
     if not st_url:
@@ -273,6 +275,8 @@ async def fetch_nws_alerts(pin: Pin, http: Http) -> list[Alert]:
     out: list[Alert] = []
     for f in r.body.get("features") or []:
         p = f.get("properties") or {}
+        geom = f.get("geometry")
+        contains = point_in_geojson(pin.lat, pin.lon, geom)
         out.append(Alert(
             id=p.get("id") or f.get("id") or "",
             event=p.get("event") or "Alert",
@@ -285,5 +289,7 @@ async def fetch_nws_alerts(pin: Pin, http: Http) -> list[Alert]:
             ends=_parse_ts(p.get("ends") or p.get("expires")),
             source="nws",
             color=_alert_color(p.get("severity") or "", p.get("event") or ""),
+            contains_pin=True if contains is None else contains,
         ))
-    return out
+    # Drop alerts whose polygon we could test and which miss this point.
+    return [a for a in out if a.contains_pin is not False]

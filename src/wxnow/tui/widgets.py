@@ -303,6 +303,50 @@ def radial_field(dir_deg: float | None, mps: float | None, w: int = 32, h: int =
     return muted(body)
 
 
+def radar_markup(snap: Snapshot) -> str:
+    r = snap.radar
+    st = snap.pin.radar_station or "—"
+    if r is None:
+        return f"{muted('RADAR  snapshot')}\n{muted('no current frame')}\n{muted('station ' + st)}"
+    age = "—"
+    if r.age_secs is not None:
+        m = int(r.age_secs // 60)
+        age = f"{m}m ago" if m else f"{int(r.age_secs)}s ago"
+    stale = "  STALE" if r.stale else ""
+    return (
+        f"{muted('RADAR  snapshot')}\n"
+        f"[bold {INK}]{r.station or st}[/]  {age}{stale}\n"
+        f"{muted(r.note)}"
+    )
+
+
+def tide_markup(snap: Snapshot, units: Units) -> str:
+    t = snap.tide
+    if t is None:
+        return f"{muted('TIDE / WATER')}\n{muted('no CO-OPS station within 50 km')}\n{muted('inland — honest empty')}"
+    from wxnow.format import fmt_dist, fmt_temp
+    lvl = f"{t.water_level_m:.2f} m MLLW" if t.water_level_m is not None else "—"
+    wt = fmt_temp(t.water_temp_c, units) if t.water_temp_c is not None else "—"
+    nxt = t.next_event or "—"
+    return (
+        f"{muted('TIDE / WATER')}\n"
+        f"[bold {INK}]{t.station_id}[/]  {fmt_dist(t.distance_km, units)}\n"
+        f"{lvl}  water {wt}\n"
+        f"{muted('next ' + nxt)}"
+    )
+
+
+def mosaic_card(snap: Snapshot, units: Units) -> str:
+    from wxnow.format import age_clock, fmt_temp
+    o = snap.primary()
+    if o is None:
+        return f"{snap.pin.name}\nno obs"
+    t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
+    age = age_clock(o.observed_at, snap.fetched_at, o.kind)
+    alert = "  ⚠" if snap.alerts else ""
+    return f"[bold {INK}]{snap.pin.name}[/]\n{t}  {o.source_label}  {age}{alert}"
+
+
 def sources_markup(snap: Snapshot, units: Units) -> str:
     now = snap.fetched_at
     conflict_temp = any(s.field == "temperature_c" and s.conflict for s in snap.spreads)

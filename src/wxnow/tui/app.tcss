@@ -87,6 +87,26 @@ Screen {
     margin-left: 1;
 }
 
+#context-row {
+    layout: horizontal;
+    height: 5;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#radar, #tide {
+    border: round $border;
+    background: $card;
+    color: $ink;
+    padding: 0 1;
+    width: 1fr;
+    height: 100%;
+}
+
+#tide {
+    margin-left: 1;
+}
+
 #sources {
     border: round $border;
     background: $card;
@@ -235,7 +255,19 @@ Screen.narrow #station {
     display: none;
 }
 
+#mosaic-grid {
+    layout: grid;
+    grid-gutter: 1 1;
+    height: 1fr;
+    padding: 1 1;
+    background: $bg;
+}
+
 Screen.short #mid-row {
+    display: none;
+}
+
+Screen.short #context-row {
     display: none;
 }
 

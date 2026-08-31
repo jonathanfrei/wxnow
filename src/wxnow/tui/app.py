@@ -17,10 +17,11 @@ from wxnow.http import Http
 from wxnow.cache import DiskCache
 from wxnow.models import Snapshot
 from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
+from wxnow.tui.mosaic import MosaicScreen
 from wxnow.tui.widgets import (
     PRESETS, alerts_markup, conflict_markup, header_line, hero_markup,
-    metar_line, render_gauges, sky_markup, sources_markup, station_markup,
-    wind_precip_markup,
+    metar_line, radar_markup, render_gauges, sky_markup, sources_markup,
+    station_markup, tide_markup, wind_precip_markup,
 )
 from wxnow.units import Units, next_units
 from wxnow.explain import explain
@@ -66,6 +67,7 @@ class WxNowApp(App):
         Binding("shift+p", "cycle_preset", "preset", show=False),
         Binding("r", "refresh", "refresh"),
         Binding("p", "pin", "pin"),
+        Binding("w", "mosaic", "mosaic"),
         Binding("m", "raw", "raw METAR"),
         Binding("a", "alerts", "alerts"),
         Binding("tab", "focus_next", "panes"),
@@ -125,6 +127,9 @@ class WxNowApp(App):
             with Horizontal(id="mid-row"):
                 yield Pane(id="sky", field="sky")
                 yield Pane(id="windprecip", field="precip")
+            with Horizontal(id="context-row"):
+                yield Pane(id="radar", field="sources")
+                yield Pane(id="tide", field="sources")
             yield Pane(id="sources", field="sources")
             yield Static(id="conflict")
             yield Static(id="alerts")
@@ -222,6 +227,8 @@ class WxNowApp(App):
                 self.query_one(f"#{sid}", Static).update(markup)
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
+        self.query_one("#radar", Static).update(radar_markup(snap))
+        self.query_one("#tide", Static).update(tide_markup(snap, units))
         self.query_one("#sources", Static).update(sources_markup(snap, units))
         self.query_one("#conflict", Static).update(conflict_markup(snap, units))
         text, cls = alerts_markup(snap)
@@ -319,6 +326,28 @@ class WxNowApp(App):
         text = copy_summary(self.snap, self.units)  # type: ignore[arg-type]
         self.copy_to_clipboard(text)
         self.notify("copied summary")
+
+    def action_mosaic(self) -> None:
+        qs = list(self.cfg.favorites)
+        if self.query and self.query not in qs:
+            qs = [self.query] + qs
+        if not qs:
+            self.notify("no pins — press p to save a place")
+            return
+        self.run_worker(self._open_mosaic(qs[:6]), exclusive=True)
+
+    async def _open_mosaic(self, qs: list[str]) -> None:
+        from wxnow.engine import fetch_mosaic
+        snaps = await fetch_mosaic(qs, self.cfg, http=self.http, offline=self.offline)
+        if not snaps:
+            self.notify("mosaic fetch failed")
+            return
+
+        def _cb(q: str | None) -> None:
+            if q:
+                self.run_worker(self._goto(q), exclusive=True)
+
+        self.push_screen(MosaicScreen(snaps, self.units), _cb)  # type: ignore[arg-type]
 
     def action_pin(self) -> None:
         q = self.query or (self.snap.pin.query if self.snap else None)
