@@ -140,10 +140,10 @@ Writes `docs/screenshots/{console,card,matrix,help,pins,mosaic}.{svg,png}`. The 
 
 `geo.classify` then `engine.fetch_snapshot` → `geo.resolve`:
 
-- ICAO / IATA → AWC airport → pin at the field
+- ICAO / IATA → AWC airport → pin at the field; unknown ICAO raises `RuntimeError` (no dummy `0,0` pin)
 - `lat,lon` → pin
 - ZIP / place → Nominatim (first hit)
-- empty → IP (`ipapi.co`, fallback `ip-api.com`), **guessed=True**, name tagged `(IP guess)`
+- empty → IP (`ipapi.co`, fallback `https://ip-api.com`), **guessed=True**, name tagged `(IP guess)`
 - named query with no hit → `RuntimeError` (do not fall back to IP)
 
 Then fan-out (async, degrade on failure) through `sources.registry.enabled(cfg)`: whatever `config.enabled` names, skipping keyed plugins that have no key.
@@ -177,14 +177,15 @@ Config `sources.primary` (default `metar`). `primary_candidates` keeps rows that
 
 ### Consensus / conflict
 
-`engine.compute_spreads` — thresholds: **2°C**, **~5 kt**, **10% RH**. Conflict is `spread >= threshold`. Show peers; do not blend. Hero temperature is **primary**, not the median.
+`engine.compute_spreads` — thresholds: **2°C**, **~5 kt**, **10% RH**, computed per-field (wind/RH spreads do not require temperature). Conflict is `spread >= threshold`. Show peers; do not blend. Hero temperature is **primary**, not the median.
 
 ### Freshness and health
 
 - `Observation.stale` from `format.is_stale` plus `quality_flags` containing `"stale cache"` when the HTTP layer served expired disk cache.
-- Stale cells dim in the TUI/card. Warnings list `"{id}: showing stale cached data"`.
-- `sources_ok` / `sources_total` count attempted providers that returned a value vs raised. `None` (honest empty: inland tides, no buoy) is not a failure and is not an “ok”.
+- Stale cells dim in the TUI/card. Warnings list `"{id}: showing stale cached data"`; HTTP 429 includes `Retry-After` when present.
+- `sources_ok` / `sources_total` count attempted providers that returned a value vs raised. `None` (honest empty: inland tides, no buoy, AirNow >80 km) is not a failure and is not an “ok”.
 - Open-Meteo pressure tendency is **observed**, not model forecast.
+- AirNow picks the **nearest** monitor by haversine distance (not highest AQI). Buoy `latest_obs` columns are mapped by header names so PRES/ATMP/WTMP stay correct when PTDY/TIDE columns shift.
 
 ### Alerts
 
@@ -215,7 +216,7 @@ Presets (`--preset` / Shift+P) only reorder the six gauge slots: `default`, `avi
 
 TUI (default on a tty) · `--card` · `--one-line` (`--format plain|waybar|tmux|polybar`) · `--json` · `--jsonl` (implies `--watch`) · `--metrics` · `--compare A,B` · `--mosaic` · `--metar` · `--watch` (reprint on **observation change**, not fetch timestamps). `--watch` cannot combine with `--compare` / `--mosaic`. `--format` is only valid with `--one-line`. `--metar` with no METAR is a hard error.
 
-`--watch` uses `cli.snapshot_change_key` (JSON minus `fetched_at`, sun, radar age, per-obs `fetched_at`). On change it also runs `notify.evaluate` / `notify.emit` (`notify-send` if present). Thresholds: `notify.gust_kt`, `notify.aqi`, `notify.alert_severity`. `false` disables a threshold and must survive `save_config`.
+`--watch` uses `cli.snapshot_change_key` (JSON minus `fetched_at`, sun, radar age, per-obs `fetched_at`; radar dict is copied before stripping `age_secs`) and reuses `engine.adaptive_refresh` (min 60 s, 60 s when precipitating — METAR precip tokens `RA/SN/DZ/SG/IC/PL/GR/GS/UP` — or severe/extreme alerts). On change it also runs `notify.evaluate` / `notify.emit` (`notify-send` if present) with per-pin state and `--` separator before title/body. Thresholds: `notify.gust_kt`, `notify.aqi`, `notify.alert_severity`. `false` disables a threshold and must survive `save_config`.
 
 JSON snapshot keys: `pin`, `fetched_at`, `primary`, `fill`, `preset`, `sources_ok`, `sources_total`, `warnings`, `sun`, `alerts`, `radar`, `tide`, `spreads`, `observations[]`.
 
@@ -224,13 +225,13 @@ JSON snapshot keys: `pin`, `fetched_at`, `primary`, `fill`, `preset`, `sources_o
 ## 6. Conventions
 
 - Python 3.11+, stdlib `tomllib` / `zoneinfo`, type hints, dataclasses. No pydantic required.
-- Async I/O via `httpx.AsyncClient`. Fan-out with `asyncio.gather(..., return_exceptions=True)`.
-- User-Agent on every HTTP call. Cache TTLs (approx): METAR ~60s, NWS obs ~90s, NWS alerts ~60s, Open-Meteo current ~180s, AQ ~300s, RainViewer ~60s, tides observations ~180s, NDBC ~180s, Nominatim ~7d, airport ~1d. Stale cache may still be served, flagged.
+- Async I/O via `httpx.AsyncClient` (`connect=5 s`, `read=timeout`). Fan-out with `asyncio.gather(..., return_exceptions=True)`.
+- User-Agent on every HTTP call. Cache TTLs (approx): METAR ~60s, NWS obs ~90s, NWS alerts ~60s, Open-Meteo current ~180s, AQ ~300s, RainViewer ~60s, tides observations ~180s, NDBC ~180s, Nominatim ~7d, airport ~1d. Stale cache may still be served, flagged. `DiskCache` writes atomically (tmp→replace), uses full 64-hex sha256, and never persists URLs containing `API_KEY`/`client_secret`/`client_id`; `Http.get_bytes` (radar tiles) is cached with `DiskCache.put_bytes`/`fresh_bytes`.
 - Tests must not need network. Live fetches are manual (`wxnow --json "New York, NY"`).
 - Keep adapters thin: HTTP → `Observation` / `RadarSnapshot` / `TideSnapshot` / `list[Alert]`. Derived meteorology lives in `derived.py`, not in sources.
 - New sources: implement `async def fetch_*(pin, http) -> …`, `register(Plugin(...))` in `load_builtin`, add the id to `DEFAULT_ENABLED` only if it belongs on the happy path. Label `kind` correctly (`observation` vs `nowcast` vs `blended`).
 - Optional API keys belong in `config.sources.keys` / `WXNOW_*_KEY`. Missing key = skip that source, never crash the happy path.
-- Adaptive refresh: faster (min 60s) when precipitating or severe/extreme alerts; otherwise `max(base, 60)`.
+- Adaptive refresh: faster (min 60s) when precipitating (`precip_rate`/`precip_mm` >0 or METAR precip token `RA/SN/DZ/SG/IC/PL/GR/GS/UP`) or severe/extreme alerts; otherwise `max(base, 60)`. `format.fmt_wind_parts` returns 4-tuple `(dir, speed, gust, unit)`.
 
 ### Commits
 
