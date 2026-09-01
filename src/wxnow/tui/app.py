@@ -198,6 +198,8 @@ class WxNowApp(App):
         return self.cfg.theme
 
     def _apply_theme(self, theme: str) -> None:
+        from wxnow.tui.widgets import set_palette
+
         screen = self.screen
         screen.remove_class("theme-day", "theme-mono", "theme-high", "theme-night", "theme-colorblind")
         if theme == "day":
@@ -214,6 +216,7 @@ class WxNowApp(App):
             self.theme = "wxnow-dark"
         else:
             self.theme = "wxnow-dark"
+        set_palette(theme in {"colorblind", "deuteranopia"})
 
     def _paint(self, snap: Snapshot) -> None:
         units: Units = self.units  # type: ignore[assignment]

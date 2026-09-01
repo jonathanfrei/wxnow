@@ -375,6 +375,26 @@ Screen.short #sources {
     color: #fff;
 }
 
+/* Okabe-Ito-derived hues retain separation under red-green deficiencies. */
+.theme-colorblind {
+    color: #f4f6f8;
+}
+
+.theme-colorblind Pane:focus,
+.theme-colorblind #hero:focus,
+.theme-colorblind .gauge:focus {
+    border: tall #56b4e9;
+}
+
+.theme-colorblind #conflict,
+.theme-colorblind #alerts.hot {
+    color: #e69f00;
+}
+
+.theme-colorblind #alerts.crit {
+    color: #d55e00;
+}
+
 Screen.reduced-motion Sparkline {
     display: none;
 }

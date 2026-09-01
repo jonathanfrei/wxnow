@@ -127,6 +127,11 @@ Presets (`default`, `aviation`, `marine`, `fire`, `running`) only reorder the ga
 
 XDG path: `~/.config/wxnow/config.toml`
 
+NWS asks clients to identify a contact in their User-Agent. On the first
+interactive TUI or card run, wxnow offers to save your email as
+`general.contact`; pressing Enter skips it, and non-interactive output never
+prompts.
+
 ```toml
 [general]
 units = "metric"          # or imperial, aviation

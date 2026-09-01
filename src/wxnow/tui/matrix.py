@@ -112,7 +112,8 @@ class MatrixScreen(Screen):
                 name.stylize("bold")
             temp_cell = Text(temp)
             if "temperature_c" in conflict and o.temperature_c is not None:
-                temp_cell.stylize("bold #f0c35a")
+                from wxnow.tui.widgets import palette_color
+                temp_cell.stylize(f"bold {palette_color('amber')}")
             if o.stale:
                 name.stylize("#7a8794")
             table.add_row(
