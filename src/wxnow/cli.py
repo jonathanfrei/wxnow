@@ -19,8 +19,9 @@ def snapshot_change_key(snap: Snapshot) -> str:
     payload.pop("fetched_at", None)
     payload.pop("sun", None)
     radar = payload.get("radar")
-    if radar:
-        radar.pop("age_secs", None)
+    if isinstance(radar, dict):
+        # copy before mutating so we never alter the dict returned by snapshot_dict
+        payload["radar"] = {k: v for k, v in radar.items() if k != "age_secs"}
     for observation in payload["observations"]:
         observation.pop("fetched_at", None)
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
@@ -140,18 +141,18 @@ async def _once(args: argparse.Namespace, cfg: Config):
 async def _watch(args: argparse.Namespace, cfg: Config) -> None:
     last = None
     first = True
+    snap = None  # type: ignore[assignment]
     while True:
         try:
             from wxnow.render.card import render_card, render_oneline
             from wxnow.render.json_out import render_json
             snap = await fetch_snapshot(_query(args, cfg), cfg, offline=args.offline)
-            digest = render_json(snap, indent=None)
             change_key = snapshot_change_key(snap)
             changed = change_key != last
             last = change_key
             if args.json or args.jsonl:
                 if changed:
-                    print(digest, flush=True)
+                    print(render_json(snap, indent=None), flush=True)
             elif args.one_line:
                 if changed:
                     print(render_oneline(snap, cfg.units, fmt=cfg.line_format), flush=True)
@@ -180,11 +181,21 @@ async def _watch(args: argparse.Namespace, cfg: Config) -> None:
                 from wxnow.notify import emit, evaluate
                 emit(evaluate(snap, cfg))
             first = False
+        except asyncio.CancelledError:
+            return
         except KeyboardInterrupt:
             return
         except Exception as exc:
             print(f"wxnow: {exc}", file=sys.stderr)
-        await asyncio.sleep(max(30, cfg.refresh_secs))
+        # adaptive refresh respects precip/alerts and enforces min 60 s
+        try:
+            from wxnow.engine import adaptive_refresh  # local import to avoid cycle
+
+            base = cfg.refresh_secs
+            sleep_secs = adaptive_refresh(snap, base) if snap is not None else max(base, 60)
+        except Exception:
+            sleep_secs = max(cfg.refresh_secs, 60)
+        await asyncio.sleep(sleep_secs)
 
 
 async def _mosaic_cmd(args: argparse.Namespace, cfg: Config) -> None:
