@@ -16,7 +16,6 @@ from wxnow.models import Observation, Snapshot
 from wxnow.units import Units
 
 
-# DataTable columns after Source/Kind/Age/Dist
 VALUE_COLS = [
     ("Temp", "temperature", "temperature_c", "temp_history"),
     ("Feels", "feels", "apparent_c", None),
@@ -46,13 +45,21 @@ class MatrixScreen(Screen):
         Binding("q", "app.pop_screen", "back", show=False),
     ]
 
-    def __init__(self, snap: Snapshot, units: Units, field: str = "temperature") -> None:
+    def __init__(
+        self,
+        snap: Snapshot,
+        units: Units,
+        field: str = "temperature",
+        *,
+        reduced_motion: bool = False,
+    ) -> None:
         super().__init__()
         self.snap = snap
         self.units = units
         self.field = field
         self.show_raw = True
         self.selected_source = snap.primary_id
+        self.reduced_motion = reduced_motion
 
     def compose(self) -> ComposeResult:
         pin = self.snap.pin
@@ -66,6 +73,7 @@ class MatrixScreen(Screen):
             with Vertical(id="matrix-side"):
                 yield Static(id="field-title")
                 yield Sparkline(id="hist-spark", min_color="#4ecb71", max_color="#6ec8ea")
+                yield Static(id="hist-spark-still")
                 yield Static(id="hist-caption")
                 yield Static(id="elev-note")
         yield Static(id="raw-drawer")
@@ -117,7 +125,10 @@ class MatrixScreen(Screen):
         title = self.query_one("#field-title", Static)
         cap = self.query_one("#hist-caption", Static)
         spark = self.query_one("#hist-spark", Sparkline)
+        still = self.query_one("#hist-spark-still", Static)
         elev = self.query_one("#elev-note", Static)
+        spark.display = not self.reduced_motion
+        still.display = self.reduced_motion
         if o is None:
             title.update("FIELD  temperature")
             cap.update("no data")
@@ -129,9 +140,13 @@ class MatrixScreen(Screen):
         hist = getattr(o, hist_attr, None) if hist_attr else None
         if not hist_attr:
             spark.data = []
+            still.update("")
             cap.update("[#b4c0cc]no measured series for this field (not a forecast either)[/]")
         elif hist:
-            spark.data = [p.value for p in hist]
+            values = [p.value for p in hist]
+            spark.data = values
+            from wxnow.format import spark as spark_str
+            still.update(spark_str(values, 24) or "")
             first, last = hist[0], hist[-1]
             cap.update(
                 f"[#b4c0cc]{self._hhmm(first.at)} → {self._hhmm(last.at)}   "
@@ -140,6 +155,7 @@ class MatrixScreen(Screen):
             )
         else:
             spark.data = []
+            still.update("")
             cap.update("[#b4c0cc]no measured history for this source[/]")
         pin = self.snap.pin
         bits = []
@@ -179,7 +195,6 @@ class MatrixScreen(Screen):
         else:
             slim = payload
             if isinstance(payload, dict):
-                # keep it small
                 keep = [
                     "icaoId", "rawOb", "temp", "dewp", "wdir", "wspd", "wgst", "visib",
                     "altim", "slp", "wxString", "name", "textDescription", "temperature",
@@ -245,24 +260,28 @@ class ExplainScreen(ModalScreen[None]):
         yield Static(f"[bold #e8eef4]{self._title}[/]\n\n[#e8eef4]{self._body}[/]\n\n[#b4c0cc]esc close[/]", classes="explain-box")
 
 
+def help_markup() -> str:
+    k = lambda s: f"[bold #0b1018 on #7ad0f0] {s} [/]"
+    return (
+        "[bold]wxnow[/]  ·  observation console  ·  zero forecast\n\n"
+        f"{k('/')}  search place or station      {k('s')}  cycle primary source\n"
+        f"{k('u')}  units metric/imperial/av     {k('r')}  refresh now\n"
+        f"{k('p')}  pin current                  {k('o')}  organize pins (reorder / delete)\n"
+        f"{k('w')}  watch mosaic                 {k('shift+p')}  cycle preset\n"
+        f"{k('↑↓')}  move panes / scroll          {k('1–9')}  saved places\n"
+        f"{k('enter')}  source matrix            {k('m')}  raw METAR / payload\n"
+        f"{k('a')}  alerts full text             {k('e')}  explain this number\n"
+        f"{k('c')}  copy summary                 {k('?')}  this overlay\n"
+        f"{k('tab')}  move panes                 {k('q')}  quit\n\n"
+        "[#b4c0cc]City-level weather is a lie; the station is the truth.[/]"
+    )
+
+
 class HelpScreen(ModalScreen[None]):
     BINDINGS = [Binding("escape", "dismiss", "close"), Binding("q", "dismiss", "close", show=False), Binding("question_mark", "dismiss", "close", show=False)]
 
     def compose(self) -> ComposeResult:
-        yield Static(
-            "[bold]wxnow[/]  ·  observation console  ·  zero forecast\n\n"
-            "[cyan]/[/]  search place or station     [cyan]s[/]  cycle primary source\n"
-            "[cyan]u[/]  units metric/imperial/av    [cyan]r[/]  refresh now\n"
-            "[cyan]p[/]  pin current                 [cyan]o[/]  organize pins (reorder / delete)\n"
-            "[cyan]w[/]  watch mosaic               [cyan]shift+p[/]  cycle preset\n"
-            "[cyan]↑↓[/]  move panes / scroll         [cyan]1–9[/]  saved places\n"
-            "[cyan]enter[/]  source matrix           [cyan]m[/]  raw METAR / payload\n"
-            "[cyan]a[/]  alerts full text            [cyan]e[/]  explain this number\n"
-            "[cyan]c[/]  copy summary                [cyan]?[/]  this overlay\n"
-            "[cyan]tab[/]  move panes                [cyan]q[/]  quit\n\n"
-            "[#b4c0cc]City-level weather is a lie; the station is the truth.[/]",
-            classes="help-box",
-        )
+        yield Static(help_markup(), classes="help-box")
 
 
 class AlertScreen(ModalScreen[None]):
