@@ -14,6 +14,12 @@ wxnow "New York, NY"
 
 <p align="center"><em>Live capture · New York, NY · downtown METAR KJRB, 0.8 mi from the pin. METAR 76°F, NWS 74°F, Open-Meteo 72.3°F — shown, not averaged.</em></p>
 
+```
+wxnow "Fort Myers, FL"
+```
+
+![wxnow card - Fort Myers, FL](https://media.jonathanfrei.com/assets/img/2026-09-01-20260901081549-82954.jpg)
+
 ## Why it exists
 
 City-level weather is a lie. The station is the truth.
