@@ -95,8 +95,8 @@ async def ip_guess(http: Http) -> Pin | None:
     r = await http.get_json("https://ipapi.co/json/", ttl=86400)
     body = r.body if isinstance(r.body, dict) else None
     if not body or body.get("latitude") is None:
-        # fallback
-        r = await http.get_json("http://ip-api.com/json/", ttl=86400)
+        # fallback — https only (plain http would be MITM-able)
+        r = await http.get_json("https://ip-api.com/json/", ttl=86400)
         body = r.body if isinstance(r.body, dict) else None
         if not body or body.get("lat") is None:
             return None
@@ -216,8 +216,7 @@ async def resolve(query: str | None, http: Http) -> Pin:
         row = await lookup_airport(query, http)
         if row and row.get("lat") is not None:
             return pin_from_airport(row, query)
-        # still pin it as a station id even if airport metadata missing
-        return Pin(query=query, name=query.upper(), lat=0.0, lon=0.0, resolver="icao")
+        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for ICAO {query.upper()!r}")
     if kind == "iata":
         row = await lookup_airport(query, http) or await lookup_airport("K" + query.upper(), http)
         if row and row.get("lat") is not None:

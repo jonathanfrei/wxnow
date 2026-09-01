@@ -14,7 +14,14 @@ def observation_from_rows(rows: list[dict], pin: Pin, fetched_at: datetime) -> O
     usable = [r for r in rows if r.get("AQI") is not None]
     if not usable:
         return None
-    row = max(usable, key=lambda r: float(r.get("AQI") or 0))
+
+    def _dist(r: dict) -> float:
+        try:
+            return haversine_km(pin.lat, pin.lon, float(r["Latitude"]), float(r["Longitude"]))
+        except (KeyError, TypeError, ValueError):
+            return float("inf")
+
+    row = min(usable, key=_dist)
     try:
         lat, lon = float(row["Latitude"]), float(row["Longitude"])
     except (KeyError, TypeError, ValueError):
