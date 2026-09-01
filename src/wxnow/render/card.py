@@ -41,7 +41,13 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
 
     if o is None:
         body = Text("No observation. " + " ".join(snap.warnings), style="yellow")
-        return Panel(Group(header, status, body), title="wxnow · atmospheric status", border_style="steel_blue")
+        return Panel(
+            Group(header, status, body),
+            title="wxnow · atmospheric status",
+            border_style="steel_blue",
+            width=width,
+            padding=(0, 1),
+        )
 
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     feels = fmt_temp(o.apparent_c, units, nowcast=o.kind != "observation")
@@ -122,14 +128,15 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
         f"  ·  last 60m {fmt_precip(last, units)}"
     )
 
-    src = Table(box=box.SIMPLE_HEAVY, expand=True, pad_edge=False)
-    src.add_column("SOURCE", style="bold")
-    src.add_column("TEMP")
-    src.add_column("WIND")
+    inner = max(24, width - 4)
+    src = Table(box=box.SIMPLE_HEAVY, expand=True, pad_edge=False, width=inner)
+    src.add_column("SOURCE", style="bold", no_wrap=True, overflow="ellipsis", max_width=14 if compact else 18)
+    src.add_column("TEMP", no_wrap=True, overflow="ellipsis")
+    src.add_column("WIND", no_wrap=True, overflow="ellipsis")
     if not compact:
-        src.add_column("RH")
-        src.add_column("PRESS")
-    src.add_column("AGE")
+        src.add_column("RH", no_wrap=True)
+        src.add_column("PRESS", no_wrap=True, overflow="ellipsis")
+    src.add_column("AGE", no_wrap=True, overflow="ellipsis")
     conflict_temp = any(s.field == "temperature_c" and s.conflict for s in snap.spreads)
     for row in snap.observations:
         tstyle = "yellow" if conflict_temp else ""
@@ -151,7 +158,6 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     conflict_line = Text()
     for s in snap.spreads:
         if s.conflict and s.field == "temperature_c":
-            # show in user units
             from wxnow.units import C_TO_F
             delta = s.spread if units == "metric" else s.spread * C_TO_F
             u = "°C" if units == "metric" else "°F"
@@ -189,8 +195,16 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
         skywind.add_column()
         skywind.add_row(sky, windp)
 
+    if o.raw_metar and len(o.raw_metar) > inner:
+        metar = Text(o.raw_metar, style="dim", overflow="fold")
     group = Group(header, status, mid, gauges, skywind, src, conflict_line, alert_txt, warn, metar)
-    return Panel(group, title="wxnow · atmospheric status", border_style="#2c3a4f", padding=(0, 1))
+    return Panel(
+        group,
+        title="wxnow · atmospheric status",
+        border_style="#2c3a4f",
+        padding=(0, 1),
+        width=width,
+    )
 
 
 def when_obs(o, pin) -> str:
