@@ -123,3 +123,16 @@ class Http:
         etag = r.headers.get("ETag")
         self.cache.put(url, body, etag=etag, text=text)
         return HttpResult(url=url, body=body, text=text, from_cache=False, stale=False, status=r.status_code)
+
+    async def get_bytes(self, url: str, *, accept: str = "application/octet-stream") -> bytes | None:
+        """Fetch a small binary asset; callers must provide their own fallback."""
+        if self.offline:
+            return None
+        try:
+            client = await self._client_get()
+            response = await client.get(url, headers={"User-Agent": self.user_agent, "Accept": accept})
+            if response.status_code >= 400:
+                return None
+            return response.content
+        except Exception:
+            return None
