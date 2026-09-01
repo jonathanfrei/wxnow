@@ -116,6 +116,7 @@ class WxNowApp(App):
         self._refresh_after = cfg.refresh_secs
         self._last_refresh_at: datetime | None = None
         self._tick = 0
+        self.reduced_motion = bool(cfg.reduced_motion)
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="board"):
@@ -145,6 +146,8 @@ class WxNowApp(App):
 
     async def on_mount(self) -> None:
         self.theme = "wxnow-dark"
+        if self.reduced_motion:
+            self.screen.add_class("reduced-motion")
         self._apply_theme(self.cfg.theme)
         self.query_one("#header", Static).update("fetching observations…")
         self.set_interval(1.0, self._on_tick)
@@ -155,7 +158,6 @@ class WxNowApp(App):
             pass
 
     def on_unmount(self) -> None:
-        # http closed by CLI after app exits
         pass
 
     def on_app_blur(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -191,15 +193,13 @@ class WxNowApp(App):
         self._paint(snap)
 
     def _auto_theme(self, snap: Snapshot) -> str:
-        # Auto used to follow the sun and flipped the app to a light ink
-        # color on still-dark cards — unreadable. Night is the product.
         if self.cfg.theme in {"auto", "night", "", None}:
             return "night"
         return self.cfg.theme
 
     def _apply_theme(self, theme: str) -> None:
         screen = self.screen
-        screen.remove_class("theme-day", "theme-mono", "theme-high", "theme-night")
+        screen.remove_class("theme-day", "theme-mono", "theme-high", "theme-night", "theme-colorblind")
         if theme == "day":
             screen.add_class("theme-day")
             self.theme = "textual-light"
@@ -210,7 +210,7 @@ class WxNowApp(App):
             screen.add_class("theme-high")
             self.theme = "wxnow-dark"
         elif theme in {"colorblind", "deuteranopia"}:
-            screen.add_class("theme-high")
+            screen.add_class("theme-colorblind")
             self.theme = "wxnow-dark"
         else:
             self.theme = "wxnow-dark"
@@ -270,7 +270,6 @@ class WxNowApp(App):
             sec = int((datetime.now(timezone.utc) - self._last_refresh_at).total_seconds())
             ago = f"refresh {sec}s ago  ·  "
         line = header_line(snap, clock(datetime.now(timezone.utc), snap.pin))
-        # inject refresh age
         line = line.replace("providers responding", f"{ago}providers responding")
         self.query_one("#header", Static).update(line)
 
@@ -310,7 +309,7 @@ class WxNowApp(App):
 
     def action_matrix(self) -> None:
         if self.snap:
-            self.push_screen(MatrixScreen(self.snap, self.units))  # type: ignore[arg-type]
+            self.push_screen(MatrixScreen(self.snap, self.units, reduced_motion=self.reduced_motion))  # type: ignore[arg-type]
 
     def action_raw(self) -> None:
         self.cfg.show_raw = not self.cfg.show_raw
