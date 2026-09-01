@@ -20,7 +20,22 @@ def _num(tok: str) -> float | None:
         return None
 
 
+def _header_map(text: str) -> dict[str, int] | None:
+    for ln in (text or "").splitlines():
+        if not ln.startswith("#"):
+            continue
+        tokens = ln.lstrip("#").strip().split()
+        # real header starts with STN or #YY etc
+        if "STN" in tokens or "LAT" in tokens:
+            return {name: i for i, name in enumerate(tokens)}
+        # some feeds use #YY, MO etc without STN prefix — still capture if looks like header
+        if tokens and tokens[0].startswith("YY"):
+            return {name: i for i, name in enumerate(tokens)}
+    return None
+
+
 def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
+    header = _header_map(text)
     lines = [ln for ln in (text or "").splitlines() if ln.strip() and not ln.startswith("#")]
     best = None
     best_d = NEAR_KM
@@ -48,14 +63,22 @@ def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
     def col(i: int) -> float | None:
         return _num(t[i]) if len(t) > i else None
 
-    # STN LAT LON YR MO DY HR MN WDIR WSPD GST WVHT ...
-    wdir = col(8)
-    wspd = col(9)  # m/s in NDBC latest_obs
-    gst = col(10)
-    wvht = col(11)
-    pres = col(15) if len(t) > 15 else col(12)
-    atmp = col(17) if len(t) > 17 else None
-    wtmp = col(18) if len(t) > 18 else None
+    def by_name(name: str, fallback: int) -> float | None:
+        if header is not None and name in header:
+            idx = header[name]
+            return _num(t[idx]) if len(t) > idx else None
+        return col(fallback)
+
+    # Use header when available, fallback to legacy indices for old snapshots
+    wdir = by_name("WDIR", 8)
+    wspd = by_name("WSPD", 9)  # m/s in NDBC latest_obs
+    gst = by_name("GST", 10)
+    wvht = by_name("WVHT", 11)
+    pres = by_name("PRES", 15)
+    if pres is None and header is None and len(t) <= 15:
+        pres = col(12)
+    atmp = by_name("ATMP", 17)
+    wtmp = by_name("WTMP", 18)
     station = Station(
         id=stn,
         name=f"NDBC {stn}",
