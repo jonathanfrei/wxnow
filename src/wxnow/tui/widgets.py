@@ -248,14 +248,17 @@ def sky_markup(o: Observation, units: Units) -> str:
 
 
 def wind_precip_markup(o: Observation, units: Units) -> str:
+    from wxnow.format import precip_onset_phrase
     precip = o.wx_text or "none"
     rate = fmt_precip(o.precip_rate_mmh if o.precip_rate_mmh is not None else 0.0, units)
     last = fmt_precip(o.precip_1h_mm if o.precip_1h_mm is not None else 0.0, units)
     field = radial_field(o.wind_dir_deg, o.wind_mps)
+    onset = precip_onset_phrase(o, o.fetched_at)
+    onset_line = f"\n{muted(onset)}" if onset else ""
     return (
         f"{muted('WIND + PRECIP NOW')}\n"
         f"precip [bold {INK}]{precip}[/]  ·  rate {rate}/h  ·  last 60m {last}\n"
-        f"{field}"
+        f"{field}{onset_line}"
     )
 
 
@@ -292,10 +295,11 @@ def radar_markup(snap: Snapshot) -> str:
     stale = "  STALE" if r.stale else ""
     station = (r.station or st).strip() or "—"
     line = f"{station} · {age}{stale}"
+    grid = f"\n[{CYAN}]{r.grid}[/]" if r.grid else ""
     return (
         f"{muted('RADAR  snapshot')}\n"
         f"[bold {INK}]{line}[/]\n"
-        f"{muted(r.note)}"
+        f"{muted(r.note)}{grid}"
     )
 
 

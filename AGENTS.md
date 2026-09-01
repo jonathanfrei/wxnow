@@ -77,7 +77,7 @@ wxnow/
       metar.py            AWC aviationweather.gov (no key)
       nws.py              api.weather.gov obs + point alerts (US, User-Agent)
       open_meteo.py       current + air quality (no key, labeled nowcast)
-      radar.py            RainViewer current frame metadata (not a loop)
+      radar.py            RainViewer current frame + local reflectivity grid (not a loop)
       tides.py            NOAA CO-OPS within 50 km; honest empty inland
       buoy.py             nearest NDBC buoy / C-MAN within 80 km
     tui/

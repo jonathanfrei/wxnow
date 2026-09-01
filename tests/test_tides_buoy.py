@@ -3,6 +3,8 @@
 from wxnow.derived import precip_onset, wx_precip_kind
 from wxnow.models import Pin
 from wxnow.sources.buoy import parse_latest_obs
+from wxnow.sources.metar import observation_from_row
+from wxnow.sources.radar import reflectivity_grid
 from wxnow.sources.tides import nearest_tide_station
 from datetime import datetime, timedelta, timezone
 
@@ -50,3 +52,30 @@ def test_precip_onset_from_history():
     assert at == t0 - timedelta(minutes=14)
     assert wx_precip_kind("SN") == "snow"
     assert wx_precip_kind("CLR") is None
+
+
+def test_metar_observation_carries_precip_onset():
+    now = datetime(2026, 9, 1, 16, 0, tzinfo=timezone.utc)
+    rows = [
+        {"icaoId": "KTUL", "obsTime": int(now.timestamp()), "rawOb": "KTUL 011600Z 18005KT 10SM -RA 20/18 A2992"},
+        {"icaoId": "KTUL", "obsTime": int((now - timedelta(minutes=14)).timestamp()), "rawOb": "KTUL 011546Z 18005KT 10SM -RA 20/18 A2992"},
+        {"icaoId": "KTUL", "obsTime": int((now - timedelta(minutes=28)).timestamp()), "rawOb": "KTUL 011532Z 18005KT 10SM CLR 20/18 A2992"},
+    ]
+    observation = observation_from_row(rows[0], Pin("KTUL", "Tulsa", 36.2, -95.9), history_rows=rows, fetched_at=now)
+    assert observation.precip_onset_kind == "rain"
+    assert observation.precip_onset_at == now - timedelta(minutes=14)
+
+
+def test_reflectivity_grid_decodes_rgba_png():
+    import struct
+    import zlib
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    header = struct.pack(">IIBBBBB", 2, 1, 8, 6, 0, 0, 0)
+    pixels = b"\x00" + bytes((0, 0, 0, 0, 255, 0, 0, 255))
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
+    grid = reflectivity_grid(png, columns=2, rows=1)
+    assert grid is not None
+    assert grid[0] == " " and grid[1] != " "
