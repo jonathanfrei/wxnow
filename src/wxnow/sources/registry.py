@@ -67,6 +67,8 @@ async def dispatch(plugin: Plugin, pin: Pin, http: Http, cfg: Config) -> Any:
 
 
 def prefer_station_id(pin: Pin) -> str | None:
+    if pin.locked_station:
+        return pin.locked_station.strip().upper()
     if pin.resolver in {"icao", "iata"}:
         q = pin.query.strip().upper()
         if len(q) == 4:
