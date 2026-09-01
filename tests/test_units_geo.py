@@ -1,4 +1,4 @@
-from wxnow.geo import classify, parse_coords
+from wxnow.geo import PlaceHit, classify, parse_coords, pin_from_hit
 from wxnow.units import c_to_f, f_to_c, next_units, temp, wind
 from wxnow.engine import compute_spreads, pick_primary
 from wxnow.models import Observation
@@ -16,6 +16,16 @@ def test_classify():
 def test_parse_coords():
     assert parse_coords("36.198, -95.888") == (36.198, -95.888)
     assert parse_coords("99, 0") is None
+
+
+def test_selected_place_hit_preserves_exact_pin():
+    hit = PlaceHit("Springfield, Illinois", 39.8, -89.6, "place", "Illinois, US")
+    pin = pin_from_hit(hit, "Springfield")
+    assert pin.query == "Springfield"
+    assert pin.name == "Springfield, Illinois"
+    assert (pin.lat, pin.lon) == (39.8, -89.6)
+    assert pin.resolver == "nominatim"
+    assert not pin.guessed
 
 
 def test_temp_roundtrip():

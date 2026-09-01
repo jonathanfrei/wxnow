@@ -16,7 +16,7 @@ from wxnow.format import clock, copy_summary
 from wxnow.http import Http
 from wxnow.cache import DiskCache
 from wxnow.models import Snapshot
-from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
+from wxnow.tui.matrix import AlertScreen, ChoiceScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
 from wxnow.tui.pins import PinsScreen
 from wxnow.tui.mosaic import MosaicScreen
 from wxnow.tui.widgets import (
@@ -64,6 +64,7 @@ class WxNowApp(App):
     BINDINGS = [
         Binding("/", "search", "search"),
         Binding("s", "cycle_source", "sources"),
+        Binding("x", "stations", "stations"),
         Binding("u", "cycle_units", "units"),
         Binding("shift+p", "cycle_preset", "preset", show=False),
         Binding("r", "refresh", "refresh"),
@@ -463,11 +464,88 @@ class WxNowApp(App):
         self.query_one("#header", Static).update(f"loading {q}…")
         await self._refresh()
 
+    async def _goto_pin(self, q: str, pin) -> None:
+        from wxnow.recents import remember
+        self.query = q
+        remember(q)
+        self.query_one("#header", Static).update(f"loading {pin.name}…")
+        try:
+            self.snap = await fetch_snapshot(
+                q, self.cfg, http=self.http, offline=self.offline, pin=pin,
+            )
+        except Exception as exc:
+            self.notify(f"search failed: {exc}", severity="error")
+            return
+        self._last_refresh_at = datetime.now(timezone.utc)
+        self._paint(self.snap)
+
     def action_search(self) -> None:
         def _cb(q: str | None) -> None:
             if q:
-                self.run_worker(self._goto(q), exclusive=True)
+                self.run_worker(self._search_and_choose(q), exclusive=True)
         self.push_screen(SearchScreen(), _cb)
+
+    async def _search_and_choose(self, q: str) -> None:
+        from wxnow.geo import classify, pin_from_hit, search_places
+        if classify(q) != "place":
+            await self._goto(q)
+            return
+        try:
+            hits = await search_places(q, self.http)
+        except Exception as exc:
+            self.notify(f"search failed: {exc}", severity="error")
+            return
+        if not hits:
+            self.notify(f"could not resolve {q!r}", severity="error")
+            return
+        if len(hits) == 1:
+            await self._goto_pin(q, pin_from_hit(hits[0], q))
+            return
+        rows = [f"{h.name}  ·  {h.lat:.4f}, {h.lon:.4f}" for h in hits[:6]]
+
+        def _pick(index: int | None) -> None:
+            if index is not None:
+                self.run_worker(self._goto_pin(q, pin_from_hit(hits[index], q)), exclusive=True)
+        self.push_screen(ChoiceScreen("choose place", rows), _pick)
+
+    def action_stations(self) -> None:
+        if self.snap:
+            self.run_worker(self._open_stations(), exclusive=True)
+
+    async def _open_stations(self) -> None:
+        from wxnow.format import age_clock, fmt_dist, fmt_temp
+        from wxnow.sources.metar import fetch_nearby_metars
+        assert self.snap is not None
+        try:
+            nearby = await fetch_nearby_metars(self.snap.pin, self.http)
+        except Exception as exc:
+            self.notify(f"station lookup failed: {exc}", severity="error")
+            return
+        by_station = {o.station.id: o for o in nearby if o.station}
+        for o in self.snap.observations:
+            if o.kind == "observation" and o.station:
+                by_station.setdefault(o.station.id, o)
+        choices = sorted(by_station.values(), key=lambda o: o.distance_km or 0.0)
+        rows = []
+        for o in choices:
+            too_far = "  ·  too far for primary" if (o.distance_km or 0) > 40 else ""
+            rows.append(
+                f"{o.station.id}  {o.station.name}  ·  {fmt_dist(o.distance_km, self.units)} "
+                f"{o.bearing or ''}  ·  {fmt_temp(o.temperature_c, self.units)}  ·  "
+                f"{age_clock(o.observed_at, self.snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)}{too_far}"
+            )
+        if not rows:
+            self.notify("no official stations within 80 km")
+            return
+
+        def _pick(index: int | None) -> None:
+            if index is None or (choices[index].distance_km or 0) > 40:
+                return
+            station_id = choices[index].station.id
+            self.snap.pin.locked_station = station_id
+            self.run_worker(self._goto_pin(self.query or self.snap.pin.query, self.snap.pin), exclusive=True)
+            self.notify(f"station locked: {station_id}")
+        self.push_screen(ChoiceScreen("official stations", rows), _pick)
 
     def on_resize(self, event) -> None:  # type: ignore[no-untyped-def]
         if not self.is_mounted:

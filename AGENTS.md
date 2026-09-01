@@ -195,11 +195,12 @@ Screens (Textual 8):
 2. **Matrix (`enter`)** — rows = sources, columns = fields, amber on disagreement, sparkline from **METAR/NWS history only** (not Open-Meteo hourly).
 3. **Watch mosaic (`w`)** — 2–6 favorite pins, current only. CLI: `--mosaic` / `--mosaic KTUL,LIRN`.
 4. **Pins (`o`, or `p` if already pinned)** — reorder (shift+↑↓) and delete. `PinsScreen._redraw` must not be named `_render` (shadows Textual).
-5. **Search (`/`)** — place / ICAO / IATA / lat,lon / ZIP; recents line.
+5. **Search (`/`)** — place / ICAO / IATA / lat,lon / ZIP; ambiguous places use a picker; recents line.
 6. **Explain (`e`)** — two-line gloss for the focused pane’s `field`.
 7. **Alerts (`a`)** — full text. **Help (`?`)** — cheatsheet including mosaic, pins, Shift+P.
 
 `tab` / arrows focus `Pane` widgets (hero, station, gauges, sky, precip, radar, tide, sources).
+`x` opens nearby official stations and locks an eligible site to the current pin.
 
 **Color rule:** every panel sets `color` and `background` in `app.tcss`. Markup uses explicit hex (`MUTED`, `INK`, `CYAN`, … in `widgets.py`). Default theme is `wxnow-dark`. Do not apply `.theme-day` unless the user passed `--theme day` *and* cards invert too.
 
