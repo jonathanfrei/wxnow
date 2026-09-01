@@ -52,14 +52,34 @@ def primary_candidates(obs: list[Observation]) -> list[Observation]:
     return [o for o in obs if _usable(o)]
 
 
+def _is_precip_code(code: str | None) -> bool:
+    if not code:
+        return False
+    # Use wmo precip tokens: RA, SN, DZ, SG, IC, PL, GR, GS, UP
+    # Covers METAR wx like "RA", "-SHRA", buoy "waves ..." should not match.
+    u = code.upper()
+    for token in ("RA", "SN", "DZ", "SG", "IC", "PL", "GR", "GS", "UP"):
+        if token in u:
+            return True
+    return False
+
+
 def compute_spreads(obs: list[Observation]) -> list[Spread]:
     out: list[Spread] = []
-    live = [o for o in obs if not o.stale and o.temperature_c is not None]
-    if len(live) < 2:
+    # Per-field filtering: stale excluded but temperature not required for wind/RH
+    has_any_pair = False
+    for field in THRESHOLDS:
+        count = sum(1 for o in obs if not o.stale and getattr(o, field, None) is not None)
+        if count >= 2:
+            has_any_pair = True
+            break
+    if not has_any_pair:
         return out
     for field, (thr, unit) in THRESHOLDS.items():
         vals: dict[str, float] = {}
-        for o in live:
+        for o in obs:
+            if o.stale:
+                continue
             v = getattr(o, field, None)
             if v is None:
                 continue
@@ -264,7 +284,7 @@ async def fetch_mosaic(
 
 def adaptive_refresh(snap: Snapshot, base: int) -> int:
     o = snap.primary()
-    if o and ((o.precip_rate_mmh or 0) > 0 or (o.precip_mm or 0) > 0 or (o.wx_code or "")):
+    if o and ((o.precip_rate_mmh or 0) > 0 or (o.precip_mm or 0) > 0 or _is_precip_code(o.wx_code)):
         return min(60, base)
     if snap.alerts:
         sev = {a.severity.lower() for a in snap.alerts}
