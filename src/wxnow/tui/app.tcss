@@ -108,7 +108,7 @@ Screen {
     margin-top: 0;
 }
 
-#radar, #tide {
+#radar, #lightning, #tide {
     border: round $border;
     background: $card;
     color: $ink;
@@ -117,8 +117,15 @@ Screen {
     height: 100%;
 }
 
-#tide {
+#lightning, #tide {
     margin-left: 1;
+}
+
+#hazards {
+    height: 1;
+    padding: 0 2;
+    color: $amber;
+    background: $bg;
 }
 
 #sources {
@@ -300,6 +307,7 @@ Screen.compact #context-row {
 Screen.compact #sky,
 Screen.compact #windprecip,
 Screen.compact #radar,
+Screen.compact #lightning,
 Screen.compact #tide {
     width: 100%;
     height: auto;

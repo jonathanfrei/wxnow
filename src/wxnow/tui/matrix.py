@@ -170,7 +170,13 @@ class MatrixScreen(Screen):
             if v is not None:
                 sign = "+" if v >= 0 else ""
                 bits.append(f"{sign}{v:.0f} {u}")
-        elev.update("[#b4c0cc]" + "  ·  ".join(bits) + "[/]" if bits else "")
+        elevation = "[#b4c0cc]" + "  ·  ".join(bits) + "[/]" if bits else ""
+        hazards = ""
+        if self.snap.preset == "aviation":
+            hazards = "\n\n[bold #f0c35a]ACTIVE HAZARDS AT PIN[/]\n" + (
+                "\n".join(h.event for h in self.snap.hazards) if self.snap.hazards else "none"
+            )
+        elev.update(elevation + hazards)
 
     def _hhmm(self, dt: datetime) -> str:
         from wxnow.format import zone

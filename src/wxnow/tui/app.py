@@ -20,7 +20,8 @@ from wxnow.tui.matrix import AlertScreen, ChoiceScreen, ExplainScreen, HelpScree
 from wxnow.tui.pins import PinsScreen
 from wxnow.tui.mosaic import MosaicScreen
 from wxnow.tui.widgets import (
-    PRESETS, alerts_markup, conflict_markup, header_line, hero_markup,
+    PRESETS, alerts_markup, conflict_markup, hazards_markup, header_line, hero_markup,
+    lightning_markup,
     metar_line, radar_markup, render_gauges, sky_markup, sources_markup,
     station_markup, tide_markup, wind_precip_markup,
 )
@@ -137,7 +138,9 @@ class WxNowApp(App):
                 yield Pane(id="windprecip", field="precip")
             with Horizontal(id="context-row"):
                 yield Pane(id="radar", field="sources")
+                yield Pane(id="lightning", field="sources")
                 yield Pane(id="tide", field="sources")
+            yield Static(id="hazards")
             yield Pane(id="sources", field="sources")
             yield Static(id="conflict")
             yield Static(id="alerts")
@@ -239,7 +242,11 @@ class WxNowApp(App):
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
         self.query_one("#radar", Static).update(radar_markup(snap))
+        self.query_one("#lightning", Static).update(lightning_markup(snap, units))
         self.query_one("#tide", Static).update(tide_markup(snap, units))
+        hazards = self.query_one("#hazards", Static)
+        hazards.update(hazards_markup(snap))
+        hazards.display = (snap.preset == "aviation")
         self.query_one("#sources", Static).update(sources_markup(snap, units))
         self.query_one("#conflict", Static).update(conflict_markup(snap, units))
         text, cls = alerts_markup(snap)
@@ -394,7 +401,7 @@ class WxNowApp(App):
     PANE_IDS = (
         "hero", "station",
         "g-hum", "g-pres", "g-wind", "g-vis", "g-uv", "g-aqi",
-        "sky", "windprecip", "radar", "tide", "sources",
+        "sky", "windprecip", "radar", "lightning", "tide", "sources",
     )
 
     def _visible_panes(self) -> list:

@@ -303,6 +303,30 @@ def radar_markup(snap: Snapshot) -> str:
     )
 
 
+def lightning_markup(snap: Snapshot, units: Units) -> str:
+    from wxnow.format import age_clock, fmt_dist
+    strike = snap.lightning
+    if strike is None:
+        return f"{muted('LIGHTNING  observed')}\n{muted('feed disabled or unavailable')}"
+    if not strike.count_40km:
+        return f"{muted('LIGHTNING  observed')}\n{muted('quiet within 40 km')}\n{muted(strike.note)}"
+    age = age_clock(strike.last_at, snap.fetched_at, "observation", stale=strike.stale)
+    nearest = fmt_dist(strike.nearest_km, units)
+    stale = "  STALE" if strike.stale else ""
+    return (
+        f"{muted('LIGHTNING  observed')}\n"
+        f"[bold {AMBER}]{strike.count_20km} / 20 km  ·  {strike.count_40km} / 40 km[/]\n"
+        f"nearest {nearest} {strike.nearest_bearing or ''}  ·  {age}{stale}"
+    )
+
+
+def hazards_markup(snap: Snapshot) -> str:
+    if not snap.hazards:
+        return muted("AVIATION HAZARDS  none at pin")
+    events = " · ".join(h.event for h in snap.hazards[:3])
+    return f"[{AMBER}]AVIATION HAZARDS  {events}[/]"
+
+
 def tide_markup(snap: Snapshot, units: Units) -> str:
     t = snap.tide
     if t is None:

@@ -162,6 +162,9 @@ Built-in plugins in `sources/registry.py`:
 | `radar` | extra | radar | no |
 | `tides` | extra | tide | no |
 | `buoy` | observation | observation | no |
+| `airnow` | observation | observation | yes |
+| `sigmet` | alerts | hazards | no |
+| `lightning` | extra | lightning | yes |
 | `pirate` / `weatherapi` / `openweather` / `visualcrossing` | nowcast | observation | yes (stub until adapter + key) |
 
 `sources.enabled` is honored for radar, tides, and buoy — not only the original three weather rows. Missing adapter or missing key = skip, never crash the happy path.
