@@ -267,6 +267,7 @@ def help_markup() -> str:
         "[bold]wxnow[/]  ·  observation console  ·  zero forecast\n\n"
         f"{k('/')}  search place or station      {k('s')}  cycle primary source\n"
         f"{k('u')}  units metric/imperial/av     {k('r')}  refresh now\n"
+        f"{k('x')}  choose official station\n"
         f"{k('p')}  pin current                  {k('o')}  organize pins (reorder / delete)\n"
         f"{k('w')}  watch mosaic                 {k('shift+p')}  cycle preset\n"
         f"{k('↑↓')}  move panes / scroll          {k('1–9')}  saved places\n"
@@ -310,14 +311,20 @@ class AlertScreen(ModalScreen[None]):
 class SearchScreen(ModalScreen[str | None]):
     BINDINGS = [
         Binding("escape", "dismiss", "close"),
+        Binding("up", "recent_up", "recent", show=False, priority=True),
+        Binding("down", "recent_down", "recent", show=False, priority=True),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        from wxnow.recents import load as load_recents
+        self.recents = load_recents()[:6]
+        self.recent_index = -1
 
     def compose(self) -> ComposeResult:
         from textual.containers import Vertical
         from textual.widgets import Input
-        from wxnow.recents import load as load_recents
-        rec = load_recents()
-        rec_line = "  ·  ".join(rec[:6]) if rec else "no recents yet"
+        rec_line = "  ·  ".join(self.recents) if self.recents else "no recents yet"
         with Vertical(classes="search-box"):
             yield Static("[bold]search[/]  place · ICAO · IATA · lat,lon · ZIP")
             yield Static(f"[#b4c0cc]recents  {rec_line}[/]")
@@ -329,3 +336,58 @@ class SearchScreen(ModalScreen[str | None]):
     def on_input_submitted(self, event) -> None:
         q = event.value.strip()
         self.dismiss(q or None)
+
+    def _select_recent(self, delta: int) -> None:
+        if not self.recents:
+            return
+        self.recent_index = (self.recent_index + delta) % len(self.recents)
+        field = self.query_one("#q")
+        field.value = self.recents[self.recent_index]
+        field.cursor_position = len(field.value)
+
+    def action_recent_up(self) -> None:
+        self._select_recent(-1)
+
+    def action_recent_down(self) -> None:
+        self._select_recent(1)
+
+
+class ChoiceScreen(ModalScreen[int | None]):
+    """Small keyboard picker shared by place and station selection."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "close"), Binding("up", "up", "up"),
+        Binding("down", "down", "down"), Binding("k", "up", "up", show=False),
+        Binding("j", "down", "down", show=False), Binding("enter", "choose", "choose"),
+    ]
+
+    def __init__(self, title: str, rows: list[str]) -> None:
+        super().__init__()
+        self.title = title
+        self.rows = rows
+        self.index = 0
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="choice-body", classes="help-box")
+
+    def on_mount(self) -> None:
+        self._redraw()
+
+    def _redraw(self) -> None:
+        lines = [f"[bold]{self.title}[/]  ↑↓ select · enter choose", ""]
+        lines.extend(f"{'▸' if i == self.index else ' '} {row}" for i, row in enumerate(self.rows))
+        lines.extend(("", "[#b4c0cc]esc cancel[/]"))
+        self.query_one("#choice-body", Static).update("\n".join(lines))
+
+    def action_up(self) -> None:
+        if self.rows:
+            self.index = (self.index - 1) % len(self.rows)
+            self._redraw()
+
+    def action_down(self) -> None:
+        if self.rows:
+            self.index = (self.index + 1) % len(self.rows)
+            self._redraw()
+
+    def action_choose(self) -> None:
+        self.dismiss(self.index if self.rows else None)

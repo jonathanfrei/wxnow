@@ -192,6 +192,16 @@ async def search_places(query: str, http: Http) -> list[PlaceHit]:
     return uniq
 
 
+def pin_from_hit(hit: PlaceHit, query: str) -> Pin:
+    """Turn an explicitly selected search result into a pin."""
+    return Pin(
+        query=query, name=hit.name, lat=hit.lat, lon=hit.lon,
+        resolver="nominatim" if hit.kind in {"place", "zip"} else hit.kind,
+        guessed=False, region=hit.extra,
+        locked_station=hit.id if hit.kind in {"icao", "iata"} else None,
+    )
+
+
 async def resolve(query: str | None, http: Http) -> Pin:
     if not query:
         pin = await ip_guess(http)

@@ -278,3 +278,22 @@ async def fetch_metar(pin: Pin, http: Http, *, prefer_id: str | None = None, hou
     # AWC returns newest first
     latest = rows[0]
     return observation_from_row(latest, pin, history_rows=rows, fetched_at=fetched_at)
+
+
+async def fetch_nearby_metars(pin: Pin, http: Http, radius_km: float = 80.0) -> list[Observation]:
+    """Return current official METAR sites around a pin for explicit selection."""
+    delta = radius_km / 111.0
+    bbox = f"{pin.lat-delta},{pin.lon-delta},{pin.lat+delta},{pin.lon+delta}"
+    result = await http.get_json(
+        f"https://aviationweather.gov/api/data/metar?bbox={bbox}&format=json", ttl=60,
+    )
+    rows = result.body if isinstance(result.body, list) else []
+    fetched_at = datetime.now(timezone.utc)
+    observations = [
+        observation_from_row(row, pin, fetched_at=fetched_at)
+        for row in rows if row.get("lat") is not None and row.get("lon") is not None
+    ]
+    return sorted(
+        [o for o in observations if o.distance_km is not None and o.distance_km <= radius_km],
+        key=lambda o: o.distance_km or 0.0,
+    )
