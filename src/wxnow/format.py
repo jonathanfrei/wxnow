@@ -215,3 +215,104 @@ def precip_onset_phrase(o: Observation, now: datetime) -> str | None:
     if o.precip_onset_at is None or not o.precip_onset_kind:
         return None
     return f"{o.precip_onset_kind} started {_age_value(o.precip_onset_at, now)} ago"
+
+
+def condition_kind(o: Observation) -> str:
+    if o.wx_code:
+        return wx_kind(o.wx_code)
+    c = (o.condition or "").lower()
+    if "thunder" in c:
+        return "storm"
+    if "snow" in c or "sleet" in c:
+        return "snow"
+    if "rain" in c or "drizzle" in c or "shower" in c:
+        return "rain"
+    if "fog" in c or "mist" in c or "haze" in c:
+        return "fog"
+    if "cloud" in c or "overcast" in c:
+        return "cloud"
+    return "clear"
+
+
+def condition_glyph(o: Observation) -> str:
+    return glyph_for(condition_kind(o))
+
+
+def beaufort_line(o: Observation) -> str:
+    force, label = beaufort(o.wind_mps)
+    if o.wind_mps is None:
+        return "—"
+    return f"B{force} {label}"
+
+
+def meter(frac: float, width: int = 12, fill: str = "█", empty: str = "░") -> str:
+    frac = max(0.0, min(1.0, frac))
+    n = int(round(frac * width))
+    return fill * n + empty * (width - n)
+
+
+def half_meter(frac: float, width: int = 10) -> str:
+    frac = max(0.0, min(1.0, frac))
+    cells = int(round(frac * width * 2))
+    full, rem = divmod(cells, 2)
+    return "█" * full + ("▌" if rem else "") + " " * (width - full - rem)
+
+
+def spark(values: list[float], width: int = 12) -> str:
+    if not values:
+        return "·" * min(width, 4)
+    blocks = "▁▂▃▄▅▆▇█"
+    lo, hi = min(values), max(values)
+    span = hi - lo or 1.0
+    if len(values) > width:
+        step = len(values) / width
+        vals = [values[int(i * step)] for i in range(width)]
+    else:
+        vals = values
+    out = []
+    for v in vals:
+        idx = int((v - lo) / span * (len(blocks) - 1))
+        out.append(blocks[max(0, min(len(blocks) - 1, idx))])
+    return "".join(out)
+
+
+def vis_dots(meters: float | None, n: int = 10) -> str:
+    if meters is None:
+        return "—"
+    frac = min(1.0, meters / 16093.44)
+    filled = int(round(frac * n))
+    return "●" * filled + "○" * (n - filled)
+
+
+def station_offset_line(o: Observation, pin: Pin, units: Units) -> str:
+    if o.station is None:
+        return "model grid at pin" if o.kind != "observation" else "no station"
+    bits = []
+    if o.distance_km is not None:
+        d = fmt_dist(o.distance_km, units)
+        br = o.bearing or ""
+        bits.append(f"{d} {br} of pin".strip())
+    if o.elev_delta_m is not None:
+        v, u = conv_elev(o.elev_delta_m, units)
+        if v is not None:
+            sign = "+" if v >= 0 else ""
+            bits.append(f"elev {fmt_elev(o.station.elevation_m, units)} ({sign}{v:.0f} {u})")
+    elif o.station.elevation_m is not None:
+        bits.append(f"elev {fmt_elev(o.station.elevation_m, units)}")
+    return " · ".join(bits) if bits else o.station.id
+
+
+def copy_summary(snap: Snapshot, units: Units) -> str:
+    o = snap.primary()
+    if o is None:
+        return f"{snap.pin.name}: no observation"
+    t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
+    w = fmt_wind(o, units)
+    p = fmt_press(o.slp_hpa, units)
+    age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
+    wx = o.wx_text or o.condition or ""
+    return (
+        f"{snap.pin.name}  {t}  {wx}  {w}  {p}  "
+        f"{o.source_label} {age}"
+        + (f"  ({coords(snap.pin.lat, snap.pin.lon)})" if snap.pin.guessed else "")
+    )
