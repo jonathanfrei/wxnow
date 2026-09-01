@@ -139,13 +139,13 @@ def fmt_wind(o: Observation, units: Units) -> str:
     return f"{core} {u}"
 
 
-def fmt_wind_parts(o: Observation, units: Units) -> tuple[str, str, str]:
+def fmt_wind_parts(o: Observation, units: Units) -> tuple[str, str, str, str]:
     spd, u = conv_wind(o.wind_mps, units)
     d = compass16(o.wind_dir_deg)
     gust, _ = conv_wind(o.wind_gust_mps, units)
     gust_s = f"{gust:.0f}" if gust is not None else "—"
     spd_s = f"{spd:.0f}" if spd is not None else "—"
-    return d, spd_s, gust_s, u  # type: ignore[return-value]
+    return d, spd_s, gust_s, u
 
 
 def fmt_press(hpa: float | None, units: Units) -> str:

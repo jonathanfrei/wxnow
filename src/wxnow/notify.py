@@ -28,18 +28,31 @@ def _state_path() -> Path:
     return p
 
 
-def _load_state() -> set[str]:
+def _pin_key(snap: Snapshot) -> str:
+    # stable per-pin key: lat/lon rounded + query fallback for pinned named places
+    pin = snap.pin
+    return f"{pin.lat:.3f},{pin.lon:.3f}:{pin.query or pin.name}"
+
+
+def _load_state() -> dict[str, set[str]]:
     p = _state_path()
     if not p.exists():
-        return set()
+        return {}
     try:
-        return set(json.loads(p.read_text()))
+        raw = json.loads(p.read_text())
+        if isinstance(raw, list):
+            # legacy flat list — treat as global, will be migrated to per-pin on next save
+            return {}
+        if isinstance(raw, dict):
+            return {str(k): set(v) for k, v in raw.items() if isinstance(v, list)}
+        return {}
     except (OSError, json.JSONDecodeError, TypeError):
-        return set()
+        return {}
 
 
-def _save_state(keys: set[str]) -> None:
-    _state_path().write_text(json.dumps(sorted(keys)))
+def _save_state(state: dict[str, set[str]]) -> None:
+    serializable = {k: sorted(v) for k, v in state.items()}
+    _state_path().write_text(json.dumps(serializable, sort_keys=True))
 
 
 def evaluate(snap: Snapshot, cfg: Config) -> list[Trip]:
@@ -67,9 +80,12 @@ def evaluate(snap: Snapshot, cfg: Config) -> list[Trip]:
             f"wxnow lightning {L.count_40km} / 40 km",
             f"{snap.pin.name}: {L.count_20km} strikes/stations in 20 km, {L.count_40km} in 40 km",
         ))
-    prev = _load_state()
+    state = _load_state()
+    key = _pin_key(snap)
+    prev = state.get(key, set())
     new = [t for t in trips if t.key not in prev]
-    _save_state({t.key for t in trips})
+    state[key] = {t.key for t in trips}
+    _save_state(state)
     return new
 
 
@@ -80,7 +96,7 @@ def emit(trips: list[Trip]) -> None:
     for t in trips:
         if send:
             try:
-                subprocess.run([send, "--app-name=wxnow", t.title, t.body], check=False, timeout=5)
+                subprocess.run([send, "--app-name=wxnow", "--", t.title, t.body], check=False, timeout=5)
             except (OSError, subprocess.SubprocessError):
                 print(f"NOTIFY {t.title}: {t.body}", flush=True)
         else:

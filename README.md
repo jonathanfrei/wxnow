@@ -163,7 +163,7 @@ lightning = false
 
 `wxnow --print-config` dumps a sample.
 
-Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used on the happy path). `--watch` notifies on gust / AQI / alert threshold crossings, not on every refresh.
+Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used on the happy path). `--watch` notifies per-pin on gust / AQI / alert threshold crossings (via `notify-send --` when available), not on every refresh. Cache is atomic and never writes URLs containing `API_KEY`/`client_secret` to disk.
 
 ## Sources
 
@@ -173,14 +173,14 @@ AQI and UV come from **Open-Meteo AQ** as their own nowcast row, not as if the M
 |---|---|
 | Aviation Weather Center METAR | observation | no |
 | NWS `api.weather.gov` obs + point alerts | observation (US) | no |
-| EPA AirNow AQI monitor | observation (US) | optional `airnow` key |
+| EPA AirNow AQI monitor (nearest, within 80 km) | observation (US) | optional `airnow` key |
 | AWC SIGMET / zero-hour G-AIRMET | active hazard | no |
 | Xweather lightning strikes (last 5 min) | observation | optional `lightning` credentials |
 | Open-Meteo current | nowcast (labeled) | no |
 | Open-Meteo Air Quality | AQI / UV extra | no |
-| RainViewer | current radar frame + age | no |
+| RainViewer | current radar frame + age (cached) | no |
 | NOAA CO-OPS | tide / water, within 50 km | no |
-| NDBC buoy / C-MAN | observation, within 80 km | no |
+| NDBC buoy / C-MAN (header-mapped) | observation, within 80 km | no |
 
 ## Stack
 
