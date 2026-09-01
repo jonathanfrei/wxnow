@@ -9,7 +9,7 @@ from wxnow.derived import solar_position
 from wxnow.format import is_stale
 from wxnow.geo import resolve
 from wxnow.http import Http
-from wxnow.models import Alert, Observation, Pin, RadarSnapshot, Snapshot, Spread, TideSnapshot
+from wxnow.models import Alert, LightningSnapshot, Observation, Pin, RadarSnapshot, Snapshot, Spread, TideSnapshot
 from wxnow.sources.registry import dispatch, enabled as enabled_plugins
 
 
@@ -110,6 +110,8 @@ async def fetch_snapshot(
         alert_rows: list[Alert] = []
         radar = None
         tide = None
+        lightning = None
+        hazard_rows: list[Alert] = []
         now = datetime.now(timezone.utc)
         for p in plugins:
             val = results.get(p.id)
@@ -124,11 +126,18 @@ async def fetch_snapshot(
                 if isinstance(val, list):
                     alert_rows.extend(a for a in val if isinstance(a, Alert))
                 continue
+            if p.produces == "hazards":
+                if isinstance(val, list):
+                    hazard_rows.extend(a for a in val if isinstance(a, Alert))
+                continue
             if p.produces == "radar" and isinstance(val, RadarSnapshot):
                 radar = val
                 continue
             if p.produces == "tide" and isinstance(val, TideSnapshot):
                 tide = val
+                continue
+            if p.produces == "lightning" and isinstance(val, LightningSnapshot):
+                lightning = val
                 continue
             if isinstance(val, Observation):
                 val.stale = val.stale or is_stale(val.observed_at, now, val.kind)
@@ -150,6 +159,9 @@ async def fetch_snapshot(
                 warnings.append(
                     f"Nearest official station is {metar.distance_km:.1f} km from your pin."
                 )
+        for row in obs:
+            if row.source_id == "airnow" and row.distance_km is not None and row.distance_km > NEAR_KM:
+                warnings.append(f"Nearest AirNow monitor is {row.distance_km:.1f} km from your pin.")
         if not any(o.kind == "observation" and (o.distance_km is None or o.distance_km <= NEAR_KM) for o in obs):
             if any(o.kind == "nowcast" for o in obs):
                 warnings.append("No station within 40 km. Showing model nowcast.")
@@ -195,6 +207,8 @@ async def fetch_snapshot(
             preset=cfg.preset,
             radar=radar,
             tide=tide,
+            lightning=lightning,
+            hazards=_dedupe_alerts(hazard_rows),
         )
     finally:
         if own_http:

@@ -145,7 +145,9 @@ favorites = ["New York, NY", "KJFK", "KLGA", "KEWR"]
 
 [sources]
 primary = "metar"
-enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy"]
+enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy", "sigmet", "airnow", "lightning"]
+# Optional: AirNow key and Xweather client pair. Missing credentials simply skip.
+# keys = { airnow = "…", lightning = "client_id:client_secret" }
 
 [display]
 theme = "auto"            # auto is night; day is explicit
@@ -156,6 +158,7 @@ preset = "default"        # default | aviation | marine | fire | running
 gust_kt = 40               # false disables gust notifications
 aqi = 150                  # false disables AQI notifications
 alert_severity = "severe"
+lightning = false
 ```
 
 `wxnow --print-config` dumps a sample.
@@ -170,6 +173,9 @@ AQI and UV come from **Open-Meteo AQ** as their own nowcast row, not as if the M
 |---|---|
 | Aviation Weather Center METAR | observation | no |
 | NWS `api.weather.gov` obs + point alerts | observation (US) | no |
+| EPA AirNow AQI monitor | observation (US) | optional `airnow` key |
+| AWC SIGMET / zero-hour G-AIRMET | active hazard | no |
+| Xweather lightning strikes (last 5 min) | observation | optional `lightning` credentials |
 | Open-Meteo current | nowcast (labeled) | no |
 | Open-Meteo Air Quality | AQI / UV extra | no |
 | RainViewer | current radar frame + age | no |

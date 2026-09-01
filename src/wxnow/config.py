@@ -15,7 +15,7 @@ from wxnow.units import Units
 
 DEFAULT_ENABLED = [
     "metar", "nws", "nws-alerts", "open-meteo", "open-meteo-aq",
-    "radar", "tides", "buoy",
+    "radar", "tides", "buoy", "sigmet", "airnow", "lightning",
 ]
 
 
@@ -38,6 +38,7 @@ class Config:
     notify_gust_kt: float | None = 40.0
     notify_aqi: float | None = 150.0
     notify_alert_severity: str = "severe"
+    notify_lightning: bool = False
     contact: str = "wxnow@localhost"
     user_agent: str = DEFAULT_UA
     path: Path | None = None
@@ -70,7 +71,7 @@ def load_config(path: Path | None = None) -> Config:
         cfg.primary = os.environ["WXNOW_PRIMARY"]
     if os.environ.get("WXNOW_CONTACT"):
         cfg.contact = os.environ["WXNOW_CONTACT"]
-    for key in ("openweather", "visualcrossing", "weatherapi", "tomorrow", "accuweather", "pirate"):
+    for key in ("openweather", "visualcrossing", "weatherapi", "tomorrow", "accuweather", "pirate", "airnow", "lightning"):
         env = os.environ.get(f"WXNOW_{key.upper()}_KEY") or os.environ.get(f"{key.upper()}_API_KEY")
         if env:
             cfg.keys[key] = env
@@ -121,6 +122,8 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.notify_aqi = _threshold(ntf["aqi"], "notify.aqi")
     if ntf.get("alert_severity"):
         cfg.notify_alert_severity = str(ntf["alert_severity"]).lower()
+    if "lightning" in ntf:
+        cfg.notify_lightning = bool(ntf["lightning"])
 
 
 def _threshold(value: Any, name: str) -> float | None:
@@ -174,6 +177,7 @@ show_raw = {"true" if cfg.show_raw else "false"}
 gust_kt = {cfg.notify_gust_kt if cfg.notify_gust_kt is not None else "false"}
 aqi = {cfg.notify_aqi if cfg.notify_aqi is not None else "false"}
 alert_severity = {toml_str(cfg.notify_alert_severity)}
+lightning = {"true" if cfg.notify_lightning else "false"}
 """
     p.write_text(text)
 
@@ -195,9 +199,9 @@ favorites = ["KTUL", "KBOS"]
 
 [sources]
 primary = "metar"
-enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy"]
+enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy", "sigmet", "airnow", "lightning"]
 fill = { aqi = "open-meteo-aq", uv = "open-meteo-aq" }
-# keys = { pirate = "…", weatherapi = "…" }
+# keys = { airnow = "…", lightning = "client_id:client_secret" }
 
 [display]
 theme = "auto"            # auto | night | day | high-contrast | colorblind | mono
@@ -210,4 +214,5 @@ show_raw = true
 gust_kt = 40               # false disables gust notifications
 aqi = 150                  # false disables AQI notifications
 alert_severity = "severe"
+lightning = false
 """
