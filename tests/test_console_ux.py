@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 
 from rich.console import Console
 
-from wxnow.models import Observation, Pin, RadarSnapshot, Snapshot
+from wxnow.models import Alert, Observation, Pin, RadarSnapshot, Snapshot, Spread, Station
 from wxnow.render.card import _card
 from wxnow.tui.matrix import help_markup
-from wxnow.tui.widgets import hero_markup, radar_markup
+from wxnow.tui.widgets import hero_markup, mosaic_card, palette_color, radar_markup, set_palette
 
 
 def _snap(**kwargs) -> Snapshot:
@@ -54,3 +54,27 @@ def test_narrow_card_fits_sixty_columns():
     console.print(_card(_snap(), "metric", width=60))
     text = console.export_text()
     assert max(len(line) for line in text.splitlines() if line) <= 60
+
+
+def test_mosaic_card_packs_current_station_context():
+    snap = _snap(
+        alerts=[Alert("nws", "flood-1", "Flood Warning", "Flooding", "severe", "immediate", "Flooding nearby")],
+        spreads=[Spread("temperature_c", {"metar": 24.4, "nws": 21.4}, 3.0, 2.0, "°C", True)],
+    )
+    obs = snap.observations[0]
+    obs.station = Station("KJRB", "Downtown", 40.70, -74.00)
+    obs.distance_km = 1.3
+    obs.wind_mps = 4.0
+    obs.condition = "Rain"
+    text = mosaic_card(snap, "metric")
+    for expected in ("KJRB", "1.3km", "wind", "1 alert", "△ sources disagree", "Rain"):
+        assert expected in text
+
+
+def test_colorblind_palette_is_distinct_and_reversible():
+    set_palette(True)
+    assert palette_color("green") == "#009e73"
+    assert palette_color("amber") == "#e69f00"
+    assert palette_color("green") != palette_color("amber")
+    set_palette(False)
+    assert palette_color("green") == "#5fdc82"

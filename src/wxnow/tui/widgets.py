@@ -21,6 +21,22 @@ VIOLET = "#cbb6f0"
 AMBER = "#f0c35a"
 GREEN = "#5fdc82"
 
+DEFAULT_PALETTE = ("#b4c0cc", "#e8eef4", "#7ad0f0", "#cbb6f0", "#f0c35a", "#5fdc82")
+COLORBLIND_PALETTE = ("#b9c2cc", "#f4f6f8", "#56b4e9", "#cc79a7", "#e69f00", "#009e73")
+
+
+def set_palette(colorblind: bool = False) -> None:
+    """Keep Rich markup colors in step with the active CSS theme."""
+    global MUTED, INK, CYAN, VIOLET, AMBER, GREEN
+    MUTED, INK, CYAN, VIOLET, AMBER, GREEN = (
+        COLORBLIND_PALETTE if colorblind else DEFAULT_PALETTE
+    )
+
+
+def palette_color(name: str) -> str:
+    return {"muted": MUTED, "ink": INK, "cyan": CYAN, "violet": VIOLET,
+            "amber": AMBER, "green": GREEN}[name]
+
 
 def muted(text: str) -> str:
     return f"[{MUTED}]{text}[/]"
@@ -300,14 +316,25 @@ def tide_markup(snap: Snapshot, units: Units) -> str:
 
 
 def mosaic_card(snap: Snapshot, units: Units) -> str:
-    from wxnow.format import age_clock, fmt_temp
+    from wxnow.format import age_clock, condition_glyph, fmt_dist, fmt_temp, fmt_wind
     o = snap.primary()
     if o is None:
-        return f"{snap.pin.name}\nno obs"
+        return f"[bold {INK}]{snap.pin.name}[/]\n{muted('no observation')}"
     t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
-    alert = "  ⚠" if snap.alerts else ""
-    return f"[bold {INK}]{snap.pin.name}[/]\n{t}  {o.source_label}  {age}{alert}"
+    glyph = condition_glyph(o)
+    station = o.station.id if o.station else o.source_label
+    distance = fmt_dist(o.distance_km, units) if o.distance_km is not None else "at pin"
+    wind = fmt_wind(o, units)
+    alert = f"[{AMBER}]⚠ {len(snap.alerts)} alert{'s' if len(snap.alerts) != 1 else ''}[/]" if snap.alerts else muted("no alerts")
+    conflict = f"[{AMBER}]△ sources disagree[/]" if any(s.conflict for s in snap.spreads) else muted("sources agree")
+    age_line = muted(f"age {age}") if o.stale else f"[{GREEN}]age {age}[/]"
+    return (
+        f"[bold {INK}]{snap.pin.name}[/]\n"
+        f"[bold {CYAN}]{t}[/]  {glyph}  [{INK}]{o.condition or o.wx_text or '—'}[/]\n"
+        f"[{INK}]{station}[/]  {muted(distance)}  ·  {age_line}\n"
+        f"wind {wind}\n{alert}  ·  {conflict}"
+    )
 
 
 def sources_markup(snap: Snapshot, units: Units) -> str:

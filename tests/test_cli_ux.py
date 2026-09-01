@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 import pytest
 from rich.console import Console
 
-from wxnow.cli import main, parse_args
+from wxnow.cli import _prompt_nws_contact, main, parse_args
+from wxnow.config import Config
 from wxnow.geo import resolve
 from wxnow.models import Observation, Pin, Snapshot
 from wxnow.render.card import _card
@@ -108,3 +109,22 @@ def test_card_uses_fill_values_and_fits_narrow_width():
     assert "UV  7" in text and "AQI  55 Moderate" in text
     assert "model" in text
     assert max(len(line) for line in text.splitlines()) <= 60
+
+
+def test_first_interactive_card_saves_nws_contact(monkeypatch, tmp_path):
+    args = parse_args(["--card", "KTUL"])
+    cfg = Config(path=tmp_path / "config.toml")
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "pilot@example.com")
+    _prompt_nws_contact(args, cfg, want_tui=False)
+    assert cfg.contact == "pilot@example.com"
+    assert 'contact = "pilot@example.com"' in cfg.path.read_text()
+
+
+def test_machine_output_never_prompts_for_contact(monkeypatch):
+    args = parse_args(["--json", "KTUL"])
+    cfg = Config()
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("unexpected prompt"))
+    _prompt_nws_contact(args, cfg, want_tui=False)
+    assert cfg.contact == "wxnow@localhost"

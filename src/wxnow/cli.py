@@ -6,7 +6,7 @@ import json
 import sys
 
 from wxnow import __tagline__, __version__
-from wxnow.config import SAMPLE, Config, config_path, load_config
+from wxnow.config import SAMPLE, Config, config_path, load_config, save_config
 from wxnow.engine import fetch_snapshot
 from wxnow.models import Snapshot
 from wxnow.units import Units
@@ -93,6 +93,21 @@ def _query(args: argparse.Namespace, cfg: Config) -> str | None:
     if args.location:
         return args.location
     return cfg.default_location
+
+
+def _prompt_nws_contact(args: argparse.Namespace, cfg: Config, *, want_tui: bool) -> None:
+    """Ask interactively once, without ever delaying machine-readable output."""
+    if cfg.contact != "wxnow@localhost" or not sys.stdout.isatty():
+        return
+    if not (want_tui or args.card or args.no_tui):
+        return
+    try:
+        contact = input("NWS asks for a contact email in wxnow's User-Agent (enter to skip): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return
+    if contact:
+        cfg.contact = contact
+        save_config(cfg)
 
 
 async def _once(args: argparse.Namespace, cfg: Config):
@@ -233,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         and not args.metar and not args.metrics
         and not args.no_tui and sys.stdout.isatty()
     )
+    _prompt_nws_contact(args, cfg, want_tui=want_tui)
     if args.watch and not want_tui:
         try:
             asyncio.run(_watch(args, cfg))
