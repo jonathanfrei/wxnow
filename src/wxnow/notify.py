@@ -60,6 +60,13 @@ def evaluate(snap: Snapshot, cfg: Config) -> list[Trip]:
     for a in snap.alerts:
         if rank.get((a.severity or "").lower(), 0) >= need:
             trips.append(Trip(f"alert:{a.id or a.event}", f"wxnow {a.event}", a.headline or a.event))
+    if cfg.notify_lightning and snap.lightning and snap.lightning.count_40km:
+        L = snap.lightning
+        trips.append(Trip(
+            "lightning",
+            f"wxnow lightning {L.count_40km} / 40 km",
+            f"{snap.pin.name}: {L.count_20km} strikes/stations in 20 km, {L.count_40km} in 40 km",
+        ))
     prev = _load_state()
     new = [t for t in trips if t.key not in prev]
     _save_state({t.key for t in trips})
