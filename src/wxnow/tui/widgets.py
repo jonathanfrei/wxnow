@@ -6,9 +6,9 @@ import math
 
 from wxnow.derived import beaufort, compass16, uv_category
 from wxnow.format import (
-    age_clock, clock, condition_glyph, coords, fmt_height,
-    fmt_precip, fmt_press, fmt_temp, fmt_vis, fmt_wind, hero_temp, spark,
-    station_offset_line, vis_dots, when_local,
+    age_clock, clock, condition_glyph, coords, fmt_dist, fmt_height,
+    fmt_precip, fmt_press, fmt_temp, fmt_vis, fmt_wave, fmt_wind, hero_temp, spark,
+    precip_onset_phrase, station_offset_line, vis_dots, when_local,
 )
 from wxnow.models import Observation, Snapshot
 from wxnow.units import C_TO_F, Units
@@ -20,6 +20,27 @@ CYAN = "#7ad0f0"
 VIOLET = "#cbb6f0"
 AMBER = "#f0c35a"
 GREEN = "#5fdc82"
+
+PALETTES = {
+    "default": {
+        "MUTED": "#b4c0cc", "INK": "#e8eef4", "CYAN": "#7ad0f0",
+        "VIOLET": "#cbb6f0", "AMBER": "#f0c35a", "GREEN": "#5fdc82",
+    },
+    # Okabe–Ito: blue / orange / purple — not red–green. High-contrast stays its own class.
+    "colorblind": {
+        "MUTED": "#b8c0c8", "INK": "#f5f7fa", "CYAN": "#56B4E9",
+        "VIOLET": "#CC79A7", "AMBER": "#E69F00", "GREEN": "#0072B2",
+    },
+}
+
+
+def set_palette(name: str) -> None:
+    """Swap markup hex constants. CSS theme classes handle widget chrome."""
+    global MUTED, INK, CYAN, VIOLET, AMBER, GREEN
+    pal = PALETTES.get(name, PALETTES["default"])
+    MUTED, INK, CYAN, VIOLET, AMBER, GREEN = (
+        pal["MUTED"], pal["INK"], pal["CYAN"], pal["VIOLET"], pal["AMBER"], pal["GREEN"],
+    )
 
 
 def muted(text: str) -> str:
@@ -177,10 +198,20 @@ def gauge_temp(o: Observation, units: Units) -> str:
     )
 
 
+def gauge_waves(o: Observation, units: Units) -> str:
+    w = fmt_wave(o.wave_height_m, units)
+    return f"{muted('WAVES')}\n[bold {INK}]{w}[/]\n{muted('NDBC WVHT')}"
+
+
+def gauge_sst(o: Observation, units: Units) -> str:
+    t = fmt_temp(o.water_temp_c, units) if o.water_temp_c is not None else "—"
+    return f"{muted('WATER TEMP')}\n[bold {INK}]{t}[/]\n{muted('buoy / CO-OPS')}"
+
+
 PRESETS: dict[str, tuple[str, ...]] = {
     "default": ("humidity", "pressure", "wind", "visibility", "uv", "aqi"),
     "aviation": ("visibility", "wind", "pressure", "ceiling", "humidity", "aqi"),
-    "marine": ("wind", "visibility", "pressure", "humidity", "uv", "aqi"),
+    "marine": ("wind", "waves", "sst", "pressure", "visibility", "humidity"),
     "fire": ("humidity", "wind", "temperature", "pressure", "visibility", "aqi"),
     "running": ("wetbulb", "aqi", "uv", "dew", "wind", "humidity"),
 }
@@ -204,6 +235,8 @@ def render_gauges(snap: Snapshot, units: Units) -> dict[str, str]:
         "wetbulb": lambda: gauge_wetbulb(o, units),
         "dew": lambda: gauge_dew(o, units),
         "temperature": lambda: gauge_temp(o, units),
+        "waves": lambda: gauge_waves(o, units),
+        "sst": lambda: gauge_sst(o, units),
     }
     names = PRESETS.get(snap.preset or "default", PRESETS["default"])
     out: dict[str, str] = {}
@@ -231,14 +264,20 @@ def sky_markup(o: Observation, units: Units) -> str:
     return "\n".join(lines)
 
 
-def wind_precip_markup(o: Observation, units: Units) -> str:
+def wind_precip_markup(o: Observation, units: Units, *, now=None) -> str:
     precip = o.wx_text or "none"
     rate = fmt_precip(o.precip_rate_mmh if o.precip_rate_mmh is not None else 0.0, units)
     last = fmt_precip(o.precip_1h_mm if o.precip_1h_mm is not None else 0.0, units)
     field = radial_field(o.wind_dir_deg, o.wind_mps)
+    onset = precip_onset_phrase(o, now or o.fetched_at)
+    if onset:
+        onset_line = muted(onset) if o.stale else f"[bold {INK}]{onset}[/]"
+        precip_line = f"{onset_line}  ·  {precip}  ·  last 60m {last}"
+    else:
+        precip_line = f"precip [bold {INK}]{precip}[/]  ·  rate {rate}/h  ·  last 60m {last}"
     return (
         f"{muted('WIND + PRECIP NOW')}\n"
-        f"precip [bold {INK}]{precip}[/]  ·  rate {rate}/h  ·  last 60m {last}\n"
+        f"{precip_line}\n"
         f"{field}"
     )
 
@@ -276,9 +315,11 @@ def radar_markup(snap: Snapshot) -> str:
     stale = "  STALE" if r.stale else ""
     station = (r.station or st).strip() or "—"
     line = f"{station} · {age}{stale}"
+    grid = f"\n[{CYAN}]{r.grid}[/]" if r.grid else ""
     return (
         f"{muted('RADAR  snapshot')}\n"
-        f"[bold {INK}]{line}[/]\n"
+        f"[bold {INK}]{line}[/]"
+        f"{grid}\n"
         f"{muted(r.note)}"
     )
 
@@ -299,15 +340,47 @@ def tide_markup(snap: Snapshot, units: Units) -> str:
     )
 
 
+def lightning_markup(snap: Snapshot) -> str:
+    L = snap.lightning
+    if L is None:
+        return f"{muted('LIGHTNING')}\n{muted('no feed')}"
+    if L.count_40km == 0:
+        return f"{muted('LIGHTNING')}\n[bold {INK}]quiet[/]\n{muted(L.note)}"
+    age = "—"
+    if L.last_at is not None:
+        age = age_clock(L.last_at, snap.fetched_at, "observation", stale=L.stale)
+    near = "—"
+    if L.nearest_km is not None:
+        near = f"{L.nearest_km:.0f} km {L.nearest_bearing or ''}".strip()
+    stale = "  STALE" if L.stale else ""
+    return (
+        f"{muted('LIGHTNING')}\n"
+        f"[bold {INK}]{L.count_20km} / 20 km · {L.count_40km} / 40 km[/]{stale}\n"
+        f"{muted('nearest ' + near + '  ·  ' + age)}\n"
+        f"{muted(L.note)}"
+    )
+
+
 def mosaic_card(snap: Snapshot, units: Units) -> str:
-    from wxnow.format import age_clock, fmt_temp
     o = snap.primary()
     if o is None:
-        return f"{snap.pin.name}\nno obs"
-    t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
+        return f"[bold {INK}]{snap.pin.name}[/]\nno obs"
+    num, unit = hero_temp(o.temperature_c, units)
+    glyph = condition_glyph(o)
     age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
+    age_s = muted(age) if o.stale else age
+    st_id = o.station.id if o.station else o.source_label
+    dist = fmt_dist(o.distance_km, units) if o.distance_km is not None else ""
+    offset = f"{st_id}  {dist}".strip()
+    wind = fmt_wind(o, units)
     alert = "  ⚠" if snap.alerts else ""
-    return f"[bold {INK}]{snap.pin.name}[/]\n{t}  {o.source_label}  {age}{alert}"
+    conflict = f" [{AMBER}]△[/]" if any(s.conflict for s in snap.spreads) else ""
+    return (
+        f"[bold {INK}]{snap.pin.name}[/]{alert}{conflict}\n"
+        f"[bold {CYAN}]{num}[/][{MUTED}]{unit}[/]  {glyph}\n"
+        f"{muted(offset)}\n"
+        f"{wind}  {age_s}"
+    )
 
 
 def sources_markup(snap: Snapshot, units: Units) -> str:
@@ -351,12 +424,25 @@ def conflict_markup(snap: Snapshot, units: Units) -> str:
     return muted("sources agree within threshold")
 
 
+def hazards_markup(snap: Snapshot) -> str:
+    if not snap.hazards:
+        return ""
+    bits = " · ".join(a.event for a in snap.hazards[:4])
+    return f"[{AMBER}]HAZARDS  {bits}[/]"
+
+
 def alerts_markup(snap: Snapshot) -> tuple[str, str]:
+    hz = hazards_markup(snap)
     if not snap.alerts:
+        if hz:
+            return hz, "hot"
         return muted("No alerts in effect for this point"), ""
     events = " · ".join(a.event for a in snap.alerts[:3])
     cls = "crit" if any(a.color == "red" for a in snap.alerts) else "hot"
-    return f"⚠  {events}   {muted('(a full text)')}", cls
+    line = f"⚠  {events}   {muted('(a full text)')}"
+    if hz:
+        line = f"{line}\n{hz}"
+    return line, cls
 
 
 def metar_line(snap: Snapshot) -> str:

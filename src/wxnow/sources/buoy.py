@@ -86,6 +86,8 @@ def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
         quality_flags=["buoy"],
         distance_km=best_d,
         bearing=brg,
+        wave_height_m=wvht,
+        water_temp_c=wtmp,
         raw_payload={"station": stn, "line": " ".join(t[:12]), "water_temp_c": wtmp, "wave_m": wvht},
     )
 

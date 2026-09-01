@@ -103,12 +103,12 @@ Screen {
 
 #context-row {
     layout: horizontal;
-    height: 4;
+    height: 12;
     padding: 0 1;
     margin-top: 0;
 }
 
-#radar, #tide {
+#radar, #lightning, #tide {
     border: round $border;
     background: $card;
     color: $ink;
@@ -117,7 +117,7 @@ Screen {
     height: 100%;
 }
 
-#tide {
+#lightning, #tide {
     margin-left: 1;
 }
 
@@ -300,6 +300,7 @@ Screen.compact #context-row {
 Screen.compact #sky,
 Screen.compact #windprecip,
 Screen.compact #radar,
+Screen.compact #lightning,
 Screen.compact #tide {
     width: 100%;
     height: auto;
@@ -318,6 +319,9 @@ Screen.tall #sources {
     height: 1fr;
     padding: 1 1;
     background: $bg;
+}
+#mosaic-grid .gauge {
+    min-height: 8;
 }
 
 
@@ -373,6 +377,46 @@ Screen.short #sources {
 .theme-high {
     background: #000;
     color: #fff;
+}
+
+/* Okabe–Ito hues: blue vs orange vs purple. Not an alias of high-contrast. */
+.theme-colorblind {
+    background: #0b1018;
+    color: #f5f7fa;
+}
+.theme-colorblind #header,
+.theme-colorblind #hero,
+.theme-colorblind #scroll-hint {
+    background: #0b1018;
+    color: #f5f7fa;
+}
+.theme-colorblind #station,
+.theme-colorblind .gauge,
+.theme-colorblind #sky,
+.theme-colorblind #windprecip,
+.theme-colorblind #radar,
+.theme-colorblind #lightning,
+.theme-colorblind #tide,
+.theme-colorblind #sources,
+.theme-colorblind #matrix-table,
+.theme-colorblind #matrix-side,
+.theme-colorblind #raw-drawer {
+    background: #161d28;
+    color: #f5f7fa;
+    border: round #56B4E9;
+}
+.theme-colorblind Footer {
+    background: #0072B2;
+    color: #f5f7fa;
+}
+.theme-colorblind #alerts.hot {
+    color: #E69F00;
+}
+.theme-colorblind #alerts.crit {
+    color: #D55E00;
+}
+.theme-colorblind #conflict {
+    color: #E69F00;
 }
 
 Screen.reduced-motion Sparkline {

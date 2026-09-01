@@ -121,7 +121,9 @@ ln -sfn "$(pwd)/.venv/bin/wxnow" ~/.local/bin/wxnow
 
 Config: `~/.config/wxnow/config.toml`. Cache: `~/.cache/wxnow/`. Do not commit either.
 
-NWS requires a User-Agent with contact. Default is `wxnow/0.3.0 (<contact>; observation-console)` from `Config.ua`. Prefer `general.contact` in config for public use.
+NWS requires a User-Agent with contact. Default is `wxnow/0.3.0 (<contact>; observation-console)` from `Config.ua`. Prefer `general.contact` in config for public use. First TTY TUI/card run prompts once if contact is still the default; `--json` / CI / non-TTY never block.
+
+CI: `.github/workflows/test.yml` runs `pytest -q` on Python 3.11 and 3.12. No live weather API calls.
 
 Regenerate README captures (live network, imperial, default pin New York, NY):
 
@@ -142,7 +144,7 @@ Writes `docs/screenshots/{console,card,matrix,help,pins,mosaic}.{svg,png}`. The 
 
 - ICAO / IATA → AWC airport → pin at the field
 - `lat,lon` → pin
-- ZIP / place → Nominatim (first hit)
+- ZIP / place → Nominatim (TUI picker when 2+ hits; CLI still first hit)
 - empty → IP (`ipapi.co`, fallback `ip-api.com`), **guessed=True**, name tagged `(IP guess)`
 - named query with no hit → `RuntimeError` (do not fall back to IP)
 
@@ -162,11 +164,14 @@ Built-in plugins in `sources/registry.py`:
 | `radar` | extra | radar | no |
 | `tides` | extra | tide | no |
 | `buoy` | observation | observation | no |
+| `airnow` | observation | observation (US AQI) | yes — skip without key |
+| `sigmet` | alerts | hazards | no |
+| `lightning` | extra | lightning | no (METAR TS/LTG reports) |
 | `pirate` / `weatherapi` / `openweather` / `visualcrossing` | nowcast | observation | yes (stub until adapter + key) |
 
 `sources.enabled` is honored for radar, tides, and buoy — not only the original three weather rows. Missing adapter or missing key = skip, never crash the happy path.
 
-AQI and UV come from **Open-Meteo AQ** as their own nowcast row via `cfg.fill` (`fill = { aqi, uv }`), not as if the METAR measured them.
+AQI and UV come from **Open-Meteo AQ** as their own nowcast row via `cfg.fill` (`fill = { aqi, uv }`), not as if the METAR measured them. When an AirNow key is present and a monitor has a value, `fill.aqi` points at `airnow`.
 
 ### Primary source
 

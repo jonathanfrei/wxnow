@@ -1,6 +1,6 @@
 from wxnow.derived import (
-    apparent, beaufort, compass16, heat_index_c, rh_from_temp_dew,
-    solar_position, wetbulb_stull, wind_chill_c, haversine_km,
+    apparent, beaufort, compass16, heat_index_c, precip_onset, rh_from_temp_dew,
+    solar_position, wetbulb_stull, wind_chill_c, haversine_km, wx_precip_kind,
 )
 from datetime import datetime, timezone
 

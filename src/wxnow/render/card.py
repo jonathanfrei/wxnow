@@ -122,10 +122,12 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     precip = o.wx_text or "none"
     rate = o.precip_rate_mmh if o.precip_rate_mmh is not None else 0.0
     last = o.precip_1h_mm if o.precip_1h_mm is not None else 0.0
-    from wxnow.format import fmt_precip
+    from wxnow.format import fmt_precip, precip_onset_phrase
+    onset = precip_onset_phrase(o, now)
     windp = (
         f"WIND + PRECIP NOW\n  precip {precip}  ·  rate {fmt_precip(rate, units)}/h"
         f"  ·  last 60m {fmt_precip(last, units)}"
+        + (f"\n  {onset}" if onset else "")
     )
 
     inner = max(24, width - 4)

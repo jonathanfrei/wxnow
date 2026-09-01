@@ -67,6 +67,8 @@ async def dispatch(plugin: Plugin, pin: Pin, http: Http, cfg: Config) -> Any:
 
 
 def prefer_station_id(pin: Pin) -> str | None:
+    if pin.locked_station:
+        return pin.locked_station.strip().upper()
     if pin.resolver in {"icao", "iata"}:
         q = pin.query.strip().upper()
         if len(q) == 4:
@@ -81,11 +83,14 @@ def load_builtin() -> None:
     if _PLUGINS:
         return
 
+    from wxnow.sources.airnow import fetch_airnow
     from wxnow.sources.buoy import fetch_buoy
+    from wxnow.sources.lightning import fetch_lightning
     from wxnow.sources.metar import fetch_metar
     from wxnow.sources.nws import fetch_nws, fetch_nws_alerts
     from wxnow.sources.open_meteo import fetch_air_quality, fetch_open_meteo
     from wxnow.sources.radar import fetch_radar
+    from wxnow.sources.sigmet import fetch_sigmet
     from wxnow.sources.tides import fetch_tides
 
     async def _metar(pin: Pin, http: Http, cfg: Config):
@@ -112,6 +117,18 @@ def load_builtin() -> None:
     async def _buoy(pin: Pin, http: Http, cfg: Config):
         return await fetch_buoy(pin, http)
 
+    async def _airnow(pin: Pin, http: Http, cfg: Config):
+        key = cfg.keys.get("airnow")
+        if not key:
+            return None
+        return await fetch_airnow(pin, http, key)
+
+    async def _sigmet(pin: Pin, http: Http, cfg: Config):
+        return await fetch_sigmet(pin, http)
+
+    async def _lightning(pin: Pin, http: Http, cfg: Config):
+        return await fetch_lightning(pin, http)
+
     register(Plugin("metar", "METAR", "observation", "observation", fetch=_metar))
     register(Plugin("nws", "NWS", "observation", "observation", fetch=_nws))
     register(Plugin("open-meteo", "Open-Meteo", "nowcast", "observation", fetch=_om))
@@ -120,6 +137,9 @@ def load_builtin() -> None:
     register(Plugin("radar", "Radar snapshot", "extra", "radar", fetch=_radar))
     register(Plugin("tides", "NOAA CO-OPS", "extra", "tide", fetch=_tides))
     register(Plugin("buoy", "NDBC buoy", "observation", "observation", fetch=_buoy))
+    register(Plugin("airnow", "AirNow", "observation", "observation", needs_key="airnow", fetch=_airnow))
+    register(Plugin("sigmet", "SIGMET/AIRMET", "alerts", "hazards", fetch=_sigmet))
+    register(Plugin("lightning", "Lightning", "extra", "lightning", fetch=_lightning))
     # Optional keyed nowcasts — registered so config.enabled can name them;
     # dispatch returns None until an adapter is added and a key is present.
     register(Plugin("pirate", "Pirate Weather", "nowcast", "observation", needs_key="pirate"))

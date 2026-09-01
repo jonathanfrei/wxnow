@@ -16,13 +16,15 @@ from wxnow.format import clock, copy_summary
 from wxnow.http import Http
 from wxnow.cache import DiskCache
 from wxnow.models import Snapshot
-from wxnow.tui.matrix import AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
+from wxnow.tui.matrix import (
+    AlertScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen, StationsScreen,
+)
 from wxnow.tui.pins import PinsScreen
 from wxnow.tui.mosaic import MosaicScreen
 from wxnow.tui.widgets import (
     PRESETS, alerts_markup, conflict_markup, header_line, hero_markup,
-    metar_line, radar_markup, render_gauges, sky_markup, sources_markup,
-    station_markup, tide_markup, wind_precip_markup,
+    lightning_markup, metar_line, radar_markup, render_gauges, set_palette,
+    sky_markup, sources_markup, station_markup, tide_markup, wind_precip_markup,
 )
 from wxnow.units import Units, next_units
 from wxnow.explain import explain
@@ -64,6 +66,7 @@ class WxNowApp(App):
     BINDINGS = [
         Binding("/", "search", "search"),
         Binding("s", "cycle_source", "sources"),
+        Binding("t", "stations", "stations"),
         Binding("u", "cycle_units", "units"),
         Binding("shift+p", "cycle_preset", "preset", show=False),
         Binding("r", "refresh", "refresh"),
@@ -117,6 +120,7 @@ class WxNowApp(App):
         self._last_refresh_at: datetime | None = None
         self._tick = 0
         self.reduced_motion = bool(cfg.reduced_motion)
+        self.locked_station: str | None = None
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="board"):
@@ -136,6 +140,7 @@ class WxNowApp(App):
                 yield Pane(id="windprecip", field="precip")
             with Horizontal(id="context-row"):
                 yield Pane(id="radar", field="sources")
+                yield Pane(id="lightning", field="sources")
                 yield Pane(id="tide", field="sources")
             yield Pane(id="sources", field="sources")
             yield Static(id="conflict")
@@ -182,6 +187,7 @@ class WxNowApp(App):
         try:
             snap = await fetch_snapshot(
                 self.query, self.cfg, http=self.http, offline=self.offline,
+                locked_station=self.locked_station,
             )
         except Exception as exc:
             self.query_one("#header", Static).update(f"[red]fetch failed:[/] {exc}")
@@ -212,8 +218,10 @@ class WxNowApp(App):
         elif theme in {"colorblind", "deuteranopia"}:
             screen.add_class("theme-colorblind")
             self.theme = "wxnow-dark"
+            set_palette("colorblind")
         else:
             self.theme = "wxnow-dark"
+            set_palette("default")
 
     def _paint(self, snap: Snapshot) -> None:
         units: Units = self.units  # type: ignore[assignment]
@@ -233,8 +241,9 @@ class WxNowApp(App):
             for sid, markup in render_gauges(snap, units).items():
                 self.query_one(f"#{sid}", Static).update(markup)
             self.query_one("#sky", Static).update(sky_markup(o, units))
-            self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
+            self.query_one("#windprecip", Static).update(wind_precip_markup(o, units, now=snap.fetched_at))
         self.query_one("#radar", Static).update(radar_markup(snap))
+        self.query_one("#lightning", Static).update(lightning_markup(snap))
         self.query_one("#tide", Static).update(tide_markup(snap, units))
         self.query_one("#sources", Static).update(sources_markup(snap, units))
         self.query_one("#conflict", Static).update(conflict_markup(snap, units))
@@ -390,7 +399,7 @@ class WxNowApp(App):
     PANE_IDS = (
         "hero", "station",
         "g-hum", "g-pres", "g-wind", "g-vis", "g-uv", "g-aqi",
-        "sky", "windprecip", "radar", "tide", "sources",
+        "sky", "windprecip", "radar", "lightning", "tide", "sources",
     )
 
     def _visible_panes(self) -> list:
@@ -456,15 +465,51 @@ class WxNowApp(App):
     async def _goto(self, q: str) -> None:
         from wxnow.recents import remember
         self.query = q
+        self.locked_station = None
         remember(q)
         self.query_one("#header", Static).update(f"loading {q}…")
         await self._refresh()
 
     def action_search(self) -> None:
-        def _cb(q: str | None) -> None:
-            if q:
-                self.run_worker(self._goto(q), exclusive=True)
-        self.push_screen(SearchScreen(), _cb)
+        def _cb(result) -> None:
+            if isinstance(result, str):
+                self.run_worker(self._goto(result), exclusive=True)
+            else:
+                from wxnow.models import Pin as PinType
+                if isinstance(result, PinType):
+                    self.run_worker(self._goto_pin(result), exclusive=True)
+        self.push_screen(SearchScreen(http=self.http), _cb)
+
+    async def _goto_pin(self, pin) -> None:
+        from wxnow.recents import remember
+        self.query = pin.query
+        self.locked_station = None
+        remember(pin.query)
+        self.query_one("#header", Static).update(f"loading {pin.name}…")
+        try:
+            snap = await fetch_snapshot(
+                pin.query, self.cfg, http=self.http, offline=self.offline, pin=pin,
+            )
+        except Exception as exc:
+            self.query_one("#header", Static).update(f"[red]fetch failed:[/] {exc}")
+            return
+        self.snap = snap
+        self._last_refresh_at = datetime.now(timezone.utc)
+        self._refresh_after = adaptive_refresh(snap, self.cfg.refresh_secs)
+        self._apply_theme(self._auto_theme(snap))
+        self._paint(snap)
+
+    def action_stations(self) -> None:
+        if not self.snap:
+            return
+
+        def _cb(icao: str | None) -> None:
+            if icao:
+                self.locked_station = icao
+                self.notify(f"locked station {icao}")
+                self.run_worker(self._refresh(), exclusive=True)
+
+        self.push_screen(StationsScreen(self.snap, self.units, http=self.http), _cb)  # type: ignore[arg-type]
 
     def on_resize(self, event) -> None:  # type: ignore[no-untyped-def]
         if not self.is_mounted:

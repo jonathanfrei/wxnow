@@ -47,7 +47,7 @@ Recapture docs shots with `python scripts/capture_screenshots.py` (writes SVG + 
 
 ## Install
 
-Python 3.11+. No API key for the happy path.
+Python 3.11+. No API key for the happy path. NWS wants an email in the User-Agent; on the first TTY TUI/card run wxnow asks once and writes `general.contact`. `WXNOW_CONTACT` still wins. Non-TTY / `--json` / CI keep `wxnow@localhost` and never hang.
 
 ```bash
 git clone https://github.com/jonathanfrei/wxnow.git
@@ -94,6 +94,7 @@ wxnow --print-config
 | `tab` | Move between panes |
 | `e` | Explain the focused pane |
 | `s` | Cycle primary source |
+| `t` | Nearby official stations — enter locks an ICAO |
 | `u` | Units (metric / imperial / aviation) |
 | `r` | Refresh now |
 | `p` | Pin current (opens organizer if already pinned) |
@@ -140,10 +141,11 @@ favorites = ["New York, NY", "KJFK", "KLGA", "KEWR"]
 
 [sources]
 primary = "metar"
-enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy"]
+enabled = ["nws", "nws-alerts", "metar", "open-meteo", "open-meteo-aq", "radar", "tides", "buoy", "sigmet", "lightning"]
+# keys = { airnow = "…" }   # optional official US AQI row; skipped without a key
 
 [display]
-theme = "auto"            # auto is night; day is explicit
+theme = "auto"            # auto is night; day is explicit; colorblind is Okabe–Ito, not high-contrast
 show_raw = true
 preset = "default"        # default | aviation | marine | fire | running
 
@@ -151,11 +153,14 @@ preset = "default"        # default | aviation | marine | fire | running
 gust_kt = 40               # false disables gust notifications
 aqi = 150                  # false disables AQI notifications
 alert_severity = "severe"
+lightning = false
 ```
 
 `wxnow --print-config` dumps a sample.
 
-Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_OPENWEATHER_KEY`, etc. (not used on the happy path). `--watch` notifies on gust / AQI / alert threshold crossings, not on every refresh.
+Env: `WXNOW_UNITS`, `WXNOW_CONTACT`, `WXNOW_CONFIG`, `WXNOW_PRIMARY`. Optional keys: `WXNOW_AIRNOW_KEY`, `WXNOW_OPENWEATHER_KEY`, etc. (not used on the happy path). `--watch` notifies on gust / AQI / alert threshold crossings, not on every refresh. Set `notify.lightning = true` to trip on nearby station thunderstorm reports.
+
+Place search with two or more Nominatim hits opens a picker (Springfield / Paris / Newport). ICAO, IATA, coordinates, and ZIP stay one-shot. `t` lists official METAR/NWS/buoy sites around the pin and locks one as `--station` would.
 
 ## Sources
 

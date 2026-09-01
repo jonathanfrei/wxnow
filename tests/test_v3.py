@@ -27,5 +27,7 @@ def test_buoy_parse_nearest():
     assert o.station and o.station.id == "44013"
     assert o.distance_km is not None and o.distance_km < 80
     assert o.wind_mps == 4.0
+    assert o.wave_height_m == 1.2
+    assert o.water_temp_c == 17.0
     far = Pin("y", "Tulsa", 36.2, -95.9)
     assert parse_latest_obs(text, far) is None

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from wxnow.models import Observation, Pin, Snapshot
 from wxnow.units import (
     Units,
+    FT_PER_M,
     c_to_f,
     temp as conv_temp,
     wind as conv_wind,
@@ -202,6 +203,21 @@ def fmt_precip(mm: float | None, units: Units) -> str:
     if units == "metric":
         return f"{v:.2f} {u}"
     return f"{v:.2f} {u}"
+
+
+def fmt_wave(meters: float | None, units: Units) -> str:
+    if meters is None:
+        return "—"
+    if units == "metric":
+        return f"{meters:.1f} m"
+    return f"{meters * FT_PER_M:.1f} ft"
+
+
+def precip_onset_phrase(o: Observation, now: datetime) -> str | None:
+    """'rain started 14m ago' from observation history, or None if unknown."""
+    if o.precip_onset_at is None or not o.precip_onset_kind:
+        return None
+    return f"{o.precip_onset_kind} started {_age_value(o.precip_onset_at, now)} ago"
 
 
 def condition_kind(o: Observation) -> str:

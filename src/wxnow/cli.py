@@ -6,7 +6,7 @@ import json
 import sys
 
 from wxnow import __tagline__, __version__
-from wxnow.config import SAMPLE, Config, config_path, load_config
+from wxnow.config import SAMPLE, Config, config_path, load_config, save_config
 from wxnow.engine import fetch_snapshot
 from wxnow.models import Snapshot
 from wxnow.units import Units
@@ -71,6 +71,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     elif args.watch and not any((args.json, args.card, args.one_line, args.metrics, args.metar)):
         args.card = True
     return args
+
+
+DEFAULT_CONTACTS = {"wxnow@localhost", "you@example.com", ""}
+
+
+def maybe_prompt_contact(cfg: Config, *, interactive: bool) -> None:
+    """One-line NWS User-Agent contact on first TTY TUI/card run. Never blocks CI."""
+    import os
+
+    if not interactive:
+        return
+    if os.environ.get("WXNOW_CONTACT"):
+        return
+    if cfg.contact not in DEFAULT_CONTACTS:
+        return
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return
+    try:
+        entered = input(
+            "NWS wants an email in the User-Agent (blank keeps wxnow@localhost): "
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if not entered:
+        return
+    cfg.contact = entered
+    try:
+        save_config(cfg)
+    except OSError:
+        pass
 
 
 def _cfg(args: argparse.Namespace) -> Config:
@@ -190,8 +221,10 @@ async def _mosaic_cmd(args: argparse.Namespace, cfg: Config) -> None:
             continue
         t = fmt_temp(o.temperature_c, cfg.units, nowcast=o.kind != "observation")
         age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
+        st = o.station.id if o.station else o.source_label
         flag = "  ⚠" if snap.alerts else ""
-        print(f"{snap.pin.name}  {t}  {o.source_label}  {age}{flag}")
+        conflict = "  △" if any(s.conflict for s in snap.spreads) else ""
+        print(f"{snap.pin.name}  {t}  {st}  {age}{flag}{conflict}")
 
 
 async def _compare(args: argparse.Namespace, cfg: Config) -> None:
@@ -233,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         and not args.metar and not args.metrics
         and not args.no_tui and sys.stdout.isatty()
     )
+    maybe_prompt_contact(cfg, interactive=bool(want_tui or args.card))
     if args.watch and not want_tui:
         try:
             asyncio.run(_watch(args, cfg))

@@ -259,3 +259,35 @@ def pressure_tendency_label(change_hpa: float | None, code: int | None = None) -
 
 def kt(mps: float | None) -> float | None:
     return None if mps is None else mps * KT_PER_MPS
+
+
+def wx_precip_kind(wx: str | None) -> str | None:
+    """Map METAR/NWS present weather to rain/snow/drizzle, or None if dry."""
+    if not wx:
+        return None
+    u = wx.upper()
+    if any(tok in u for tok in ("SN", "SG", "IC", "PL", "GR", "GS")):
+        return "snow"
+    if "DZ" in u:
+        return "drizzle"
+    if any(tok in u for tok in ("RA", "SH", "TS", "UP")):
+        return "rain"
+    return None
+
+
+def precip_onset(rows: list[tuple[datetime, str | None]]) -> tuple[datetime | None, str | None]:
+    """rows newest-first: (observed_at, wx_code). Onset is the start of the current wet spell."""
+    if not rows:
+        return None, None
+    kind = wx_precip_kind(rows[0][1])
+    if kind is None:
+        return None, None
+    onset = rows[0][0]
+    for at, wx in rows[1:]:
+        k = wx_precip_kind(wx)
+        if k:
+            onset = at
+            kind = k
+        else:
+            break
+    return onset, kind

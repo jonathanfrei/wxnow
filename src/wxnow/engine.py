@@ -9,7 +9,7 @@ from wxnow.derived import solar_position
 from wxnow.format import is_stale
 from wxnow.geo import resolve
 from wxnow.http import Http
-from wxnow.models import Alert, Observation, Pin, RadarSnapshot, Snapshot, Spread, TideSnapshot
+from wxnow.models import Alert, LightningSnapshot, Observation, Pin, RadarSnapshot, Snapshot, Spread, TideSnapshot
 from wxnow.sources.registry import dispatch, enabled as enabled_plugins
 
 
@@ -86,6 +86,7 @@ async def fetch_snapshot(
     http: Http | None = None,
     offline: bool = False,
     pin: Pin | None = None,
+    locked_station: str | None = None,
 ) -> Snapshot:
     own_http = http is None
     if http is None:
@@ -94,6 +95,8 @@ async def fetch_snapshot(
     try:
         if pin is None:
             pin = await resolve(query, http)
+        if locked_station:
+            pin.locked_station = locked_station.strip().upper()
 
         plugins = enabled_plugins(cfg)
         tasks: dict[str, asyncio.Task] = {
@@ -108,8 +111,10 @@ async def fetch_snapshot(
 
         obs: list[Observation] = []
         alert_rows: list[Alert] = []
+        hazard_rows: list[Alert] = []
         radar = None
         tide = None
+        lightning = None
         now = datetime.now(timezone.utc)
         for p in plugins:
             val = results.get(p.id)
@@ -124,11 +129,18 @@ async def fetch_snapshot(
                 if isinstance(val, list):
                     alert_rows.extend(a for a in val if isinstance(a, Alert))
                 continue
+            if p.produces == "hazards":
+                if isinstance(val, list):
+                    hazard_rows.extend(a for a in val if isinstance(a, Alert))
+                continue
             if p.produces == "radar" and isinstance(val, RadarSnapshot):
                 radar = val
                 continue
             if p.produces == "tide" and isinstance(val, TideSnapshot):
                 tide = val
+                continue
+            if p.produces == "lightning" and isinstance(val, LightningSnapshot):
+                lightning = val
                 continue
             if isinstance(val, Observation):
                 val.stale = val.stale or is_stale(val.observed_at, now, val.kind)
@@ -169,6 +181,14 @@ async def fetch_snapshot(
 
         primary = pick_primary(obs, cfg.primary)
         spreads = compute_spreads(obs)
+        fill = dict(cfg.fill)
+        airnow = next((o for o in obs if o.source_id == "airnow" and o.aqi_us is not None), None)
+        if airnow:
+            fill["aqi"] = "airnow"
+            if airnow.distance_km is not None and airnow.distance_km > NEAR_KM:
+                warnings.append(
+                    f"AirNow monitor is {airnow.distance_km:.1f} km from your pin."
+                )
 
         sun_alt = sun_az = None
         try:
@@ -191,10 +211,12 @@ async def fetch_snapshot(
             sources_total=ok + failed,
             spreads=spreads,
             offline=offline,
-            fill=dict(cfg.fill),
+            fill=fill,
             preset=cfg.preset,
             radar=radar,
             tide=tide,
+            lightning=lightning,
+            hazards=list(_dedupe_alerts(hazard_rows)),
         )
     finally:
         if own_http:
@@ -250,9 +272,11 @@ async def fetch_mosaic(
 
 def adaptive_refresh(snap: Snapshot, base: int) -> int:
     o = snap.primary()
-    if o and ((o.precip_rate_mmh or 0) > 0 or (o.precip_mm or 0) > 0 or (o.wx_code or "")):
+    if o and ((o.precip_rate_mmh or 0) > 0 or (o.precip_mm or 0) > 0 or (o.wx_code or "") or o.precip_onset_kind):
         return min(60, base)
-    if snap.alerts:
+    if snap.lightning and snap.lightning.count_40km:
+        return min(60, base)
+    if snap.alerts or snap.hazards:
         sev = {a.severity.lower() for a in snap.alerts}
         if {"severe", "extreme"} & sev:
             return 60

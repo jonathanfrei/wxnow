@@ -12,7 +12,7 @@ from textual.widgets import DataTable, Footer, Sparkline, Static
 
 from wxnow.explain import explain
 from wxnow.format import age_clock, coords, fmt_elev, fmt_temp, fmt_vis, fmt_wind
-from wxnow.models import Observation, Snapshot
+from wxnow.models import Observation, Pin, Snapshot
 from wxnow.units import Units
 
 
@@ -28,6 +28,8 @@ VALUE_COLS = [
     ("Wx", "precip", "wx", None),
     ("UV", "uv", "uv_index", None),
     ("AQI", "aqi", "aqi_us", None),
+    ("Waves", "waves", "wave_height_m", None),
+    ("SST", "sst", "water_temp_c", None),
 ]
 
 
@@ -105,6 +107,9 @@ class MatrixScreen(Screen):
             wx = (o.wx_code or o.condition or "—")[:12]
             uv = f"{o.uv_index:.0f}" if o.uv_index is not None else "—"
             aqi = f"{o.aqi_us:.0f}" if o.aqi_us is not None else "—"
+            from wxnow.format import fmt_wave
+            waves = fmt_wave(o.wave_height_m, self.units) if o.wave_height_m is not None else "—"
+            sst = fmt_temp(o.water_temp_c, self.units) if o.water_temp_c is not None else "—"
             dist = f"{o.distance_km:.1f}km" if o.distance_km is not None else ("grid" if o.kind == "nowcast" else "—")
             age = age_clock(o.observed_at, now, o.kind, stale=o.stale, fetched_at=o.fetched_at)
             name = Text(o.source_label)
@@ -116,7 +121,7 @@ class MatrixScreen(Screen):
             if o.stale:
                 name.stylize("#7a8794")
             table.add_row(
-                name, o.kind_label, age, dist, temp_cell, feels, dew, rh, wind, gust, vis, slp, wx, uv, aqi,
+                name, o.kind_label, age, dist, temp_cell, feels, dew, rh, wind, gust, vis, slp, wx, uv, aqi, waves, sst,
                 key=o.source_id,
             )
 
@@ -268,7 +273,8 @@ def help_markup() -> str:
         f"{k('u')}  units metric/imperial/av     {k('r')}  refresh now\n"
         f"{k('p')}  pin current                  {k('o')}  organize pins (reorder / delete)\n"
         f"{k('w')}  watch mosaic                 {k('shift+p')}  cycle preset\n"
-        f"{k('↑↓')}  move panes / scroll          {k('1–9')}  saved places\n"
+        f"{k('t')}  nearby stations / lock       {k('1–9')}  saved places\n"
+        f"{k('↑↓')}  move panes / scroll\n"
         f"{k('enter')}  source matrix            {k('m')}  raw METAR / payload\n"
         f"{k('a')}  alerts full text             {k('e')}  explain this number\n"
         f"{k('c')}  copy summary                 {k('?')}  this overlay\n"
@@ -309,22 +315,137 @@ class AlertScreen(ModalScreen[None]):
 class SearchScreen(ModalScreen[str | None]):
     BINDINGS = [
         Binding("escape", "dismiss", "close"),
+        Binding("1", "recent(0)", "1", show=False),
+        Binding("2", "recent(1)", "2", show=False),
+        Binding("3", "recent(2)", "3", show=False),
+        Binding("4", "recent(3)", "4", show=False),
+        Binding("5", "recent(4)", "5", show=False),
+        Binding("6", "recent(5)", "6", show=False),
     ]
+
+    def __init__(self, http=None) -> None:
+        super().__init__()
+        self.http = http
+        from wxnow.recents import load as load_recents
+        self.recents = load_recents()
+        self._hits = []
 
     def compose(self) -> ComposeResult:
         from textual.containers import Vertical
-        from textual.widgets import Input
-        from wxnow.recents import load as load_recents
-        rec = load_recents()
-        rec_line = "  ·  ".join(rec[:6]) if rec else "no recents yet"
+        from textual.widgets import Input, OptionList
+        rec_line = "  ·  ".join(f"{i+1}:{r}" for i, r in enumerate(self.recents[:6])) if self.recents else "no recents yet"
         with Vertical(classes="search-box"):
             yield Static("[bold]search[/]  place · ICAO · IATA · lat,lon · ZIP")
             yield Static(f"[#b4c0cc]recents  {rec_line}[/]")
             yield Input(placeholder="KTUL  /  Tulsa  /  36.2,-95.9", id="q")
+            yield OptionList(id="hits")
 
     def on_mount(self) -> None:
         self.query_one("#q").focus()
+        self.query_one("#hits").display = False
 
-    def on_input_submitted(self, event) -> None:
+    def action_recent(self, index: int) -> None:
+        if 0 <= index < len(self.recents):
+            self.dismiss(self.recents[index])
+
+    async def on_input_submitted(self, event) -> None:
         q = event.value.strip()
-        self.dismiss(q or None)
+        if not q:
+            self.dismiss(None)
+            return
+        from wxnow.geo import classify, search_places
+        kind = classify(q)
+        if kind in {"icao", "iata", "coords", "zip"} or self.http is None:
+            self.dismiss(q)
+            return
+        try:
+            hits = await search_places(q, self.http)
+        except Exception:
+            self.dismiss(q)
+            return
+        if len(hits) <= 1:
+            self.dismiss(q)
+            return
+        from textual.widgets import OptionList
+        self._hits = hits
+        opts = self.query_one("#hits", OptionList)
+        opts.clear_options()
+        for h in hits[:8]:
+            extra = (h.extra[:60] + "…") if h.extra and h.extra != h.name else f"{h.lat:.3f},{h.lon:.3f}"
+            opts.add_option(f"{h.name}  ·  {extra}")
+        opts.display = True
+        opts.focus()
+
+    def on_option_list_option_selected(self, event) -> None:
+        idx = event.option_index
+        if 0 <= idx < len(self._hits):
+            h = self._hits[idx]
+            self.dismiss(Pin(query=h.name, name=h.name, lat=h.lat, lon=h.lon, resolver="nominatim"))
+
+
+class StationsScreen(ModalScreen[str | None]):
+    """Official stations around the pin. Enter locks an ICAO as primary."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "close"),
+        Binding("enter", "lock", "lock", show=False),
+    ]
+
+    def __init__(self, snap: Snapshot, units: Units, http=None) -> None:
+        super().__init__()
+        self.snap = snap
+        self.units = units
+        self.http = http
+        self.rows = []
+
+    def compose(self) -> ComposeResult:
+        from textual.containers import Vertical
+        from textual.widgets import OptionList
+        with Vertical(classes="search-box"):
+            yield Static("[bold]stations[/]  official METAR / NWS / buoy within 80 km  ·  enter locks")
+            yield OptionList(id="st-list")
+
+    def on_mount(self) -> None:
+        self.run_worker(self._load(), exclusive=True)
+
+    async def _load(self) -> None:
+        from wxnow.format import fmt_dist, fmt_temp, age_clock
+        from wxnow.sources.stations import fetch_nearby_metars, merge_nearby
+        extra = []
+        if self.http is not None:
+            try:
+                extra = await fetch_nearby_metars(self.snap.pin, self.http)
+            except Exception:
+                extra = []
+        rows = merge_nearby(self.snap, extra)
+        self.rows = rows
+        from textual.widgets import OptionList
+        opts = self.query_one("#st-list", OptionList)
+        opts.clear_options()
+        if not rows:
+            opts.add_option("no official stations nearby")
+            return
+        now = self.snap.fetched_at
+        for s in rows:
+            t = fmt_temp(s.temperature_c, self.units) if s.temperature_c is not None else "—"
+            dist = fmt_dist(s.distance_km, self.units)
+            age = age_clock(s.observed_at, now, "observation") if s.observed_at else "—"
+            far = "  too far for primary" if s.too_far else ""
+            opts.add_option(f"{s.id:<6}  {s.name[:28]:<28}  {dist:>7} {s.bearing:<3}  {t:>6}  {age}{far}")
+        opts.focus()
+
+    def on_option_list_option_selected(self, event) -> None:
+        self.action_lock()
+
+    def action_lock(self) -> None:
+        from textual.widgets import OptionList
+        opts = self.query_one("#st-list", OptionList)
+        idx = opts.highlighted
+        if idx is None or not (0 <= idx < len(self.rows)):
+            self.dismiss(None)
+            return
+        row = self.rows[idx]
+        if row.too_far:
+            self.dismiss(None)
+            return
+        self.dismiss(row.id)

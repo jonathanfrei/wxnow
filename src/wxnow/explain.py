@@ -26,6 +26,8 @@ def explain(field: str, snap: Snapshot, units: Units = "metric") -> tuple[str, s
         "precip": _precip,
         "station": _station,
         "sources": _sources,
+        "waves": _waves,
+        "sst": _sst,
     }.get(field, _temp)
     return fn(obs, snap, units)
 
@@ -180,9 +182,30 @@ def _sky(o: Observation, snap: Snapshot, units: Units) -> tuple[str, str]:
 
 def _precip(o: Observation, snap: Snapshot, units: Units) -> tuple[str, str]:
     wx = o.wx_text or "none"
+    extra = ""
+    if o.precip_onset_kind and o.precip_onset_at:
+        extra = f" {o.precip_onset_kind} started at {o.precip_onset_at.strftime('%H:%M')} UTC."
     return (
-        f"Present weather: {wx}" + (f" ({o.wx_code})" if o.wx_code else "") + ".",
+        f"Present weather: {wx}" + (f" ({o.wx_code})" if o.wx_code else "") + "." + extra,
         "This is what is happening now — type and intensity — not a chance of rain later.",
+    )
+
+
+def _waves(o: Observation, snap: Snapshot, units: Units) -> tuple[str, str]:
+    if o.wave_height_m is None:
+        return "No wave height from a buoy.", "Waves are a buoy measurement, not a marine forecast."
+    return (
+        f"Significant wave height {o.wave_height_m:.1f} m at the buoy.",
+        "NDBC WVHT. Inland pins stay empty. Not a wave forecast.",
+    )
+
+
+def _sst(o: Observation, snap: Snapshot, units: Units) -> tuple[str, str]:
+    if o.water_temp_c is None:
+        return "No water temperature from a buoy or tide station.", "Sea surface temperature is measured, not modeled here."
+    return (
+        f"Water temperature {_t(o.water_temp_c, units)}.",
+        "Buoy WTMP or CO-OPS water temperature. Not a model SST grid.",
     )
 
 

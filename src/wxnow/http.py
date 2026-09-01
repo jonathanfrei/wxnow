@@ -123,3 +123,40 @@ class Http:
         etag = r.headers.get("ETag")
         self.cache.put(url, body, etag=etag, text=text)
         return HttpResult(url=url, body=body, text=text, from_cache=False, stale=False, status=r.status_code)
+
+    async def get_bytes(self, url: str, ttl: float) -> HttpResult:
+        """Fetch raw bytes (radar tiles). Cached as a base64 string."""
+        import base64
+
+        fresh = self.cache.fresh(url, ttl)
+        if fresh is not None and isinstance(fresh.body, str) and fresh.body.startswith("b64:"):
+            raw = base64.b64decode(fresh.body[4:])
+            return HttpResult(
+                url=url, body=raw, text="", from_cache=True, stale=False, status=200,
+                cache_fetched_at=datetime.fromtimestamp(fresh.fetched_at, timezone.utc),
+            )
+        cached = self.cache.get(url, ttl)
+        if self.offline:
+            if cached is None or not (isinstance(cached.body, str) and cached.body.startswith("b64:")):
+                return HttpResult(url=url, body=None, text="", from_cache=True, stale=True, error="offline and uncached")
+            raw = base64.b64decode(cached.body[4:])
+            return HttpResult(
+                url=url, body=raw, text="", from_cache=True, stale=True, status=200,
+                cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
+            )
+        try:
+            client = await self._client_get()
+            r = await client.get(url, headers={"User-Agent": self.user_agent, "Accept": "image/png"})
+        except Exception as exc:
+            if cached is not None and isinstance(cached.body, str) and cached.body.startswith("b64:"):
+                raw = base64.b64decode(cached.body[4:])
+                return HttpResult(
+                    url=url, body=raw, text="", from_cache=True, stale=True, error=str(exc),
+                    cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
+                )
+            return HttpResult(url=url, body=None, text="", from_cache=False, stale=True, error=str(exc))
+        if r.status_code >= 400:
+            return HttpResult(url=url, body=None, text=r.text[:200], from_cache=False, stale=True, status=r.status_code, error=f"HTTP {r.status_code}")
+        raw = r.content
+        self.cache.put(url, "b64:" + base64.b64encode(raw).decode("ascii"), etag=r.headers.get("ETag"))
+        return HttpResult(url=url, body=raw, text="", from_cache=False, stale=False, status=r.status_code)

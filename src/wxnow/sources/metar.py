@@ -5,7 +5,7 @@ from typing import Any
 
 from wxnow.derived import (
     apparent, ceiling_from_clouds, compass8, haversine_km, initial_bearing,
-    pressure_tendency_label, rh_from_temp_dew, wetbulb_stull,
+    precip_onset, pressure_tendency_label, rh_from_temp_dew, wetbulb_stull,
 )
 from wxnow.http import Http
 from wxnow.metar_decode import parse_metar
@@ -159,6 +159,13 @@ def observation_from_row(
     hist_rows = history_rows or [row]
     temps, press, tmin, tmax = _history(hist_rows)
     tend, tchg = _tendency_from_history(press, parsed.pres_change_hpa, parsed.pres_code)
+    wx_series: list[tuple[datetime, str | None]] = []
+    for h in hist_rows:
+        at = _unix(h.get("obsTime"))
+        if at is None:
+            continue
+        wx_series.append((at, h.get("wxString") or h.get("wx") or ""))
+    onset_at, onset_kind = precip_onset(wx_series)
 
     wb = wetbulb_stull(temp_c, rh) if temp_c is not None and rh is not None else None
     app, formula = apparent(temp_c, rh, _kt_to_mps(wind_kt))
@@ -217,6 +224,8 @@ def observation_from_row(
         precip_1h_mm=precip_1h,
         today_min_c=tmin,
         today_max_c=tmax,
+        precip_onset_at=onset_at,
+        precip_onset_kind=onset_kind,
         raw_metar=raw,
         raw_payload=row,
         quality_flags=flags,

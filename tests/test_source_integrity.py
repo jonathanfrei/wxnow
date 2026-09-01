@@ -26,7 +26,7 @@ class StaticHttp:
 
 def test_enabled_sources_are_exact_and_defaults_are_explicit():
     assert [plugin.id for plugin in enabled(Config(enabled=["metar"]))] == ["metar"]
-    assert {"nws-alerts", "radar", "tides", "buoy"}.issubset(DEFAULT_ENABLED)
+    assert {"nws-alerts", "radar", "tides", "buoy", "sigmet", "lightning"}.issubset(DEFAULT_ENABLED)
 
 
 def test_pressure_change_uses_three_hour_history_not_future_data():

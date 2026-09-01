@@ -47,6 +47,7 @@ class Pin:
     guessed: bool = False
     region: str | None = None
     radar_station: str | None = None
+    locked_station: str | None = None  # ICAO lock for this pin (--station / TUI)
 
 
 @dataclass
@@ -118,6 +119,10 @@ class Observation:
     co: float | None = None
     so2: float | None = None
     solar_wm2: float | None = None
+    wave_height_m: float | None = None
+    water_temp_c: float | None = None
+    precip_onset_at: datetime | None = None
+    precip_onset_kind: str | None = None  # rain | snow | drizzle
     raw_metar: str | None = None
     raw_payload: Any = None
     quality_flags: list[str] = field(default_factory=list)
@@ -142,6 +147,19 @@ class RadarSnapshot:
     station: str | None = None
     note: str = "current frame only — not a loop"
     stale: bool = False
+    grid: str | None = None  # braille/ASCII current frame
+
+
+@dataclass
+class LightningSnapshot:
+    source: str
+    count_20km: int = 0
+    count_40km: int = 0
+    nearest_km: float | None = None
+    nearest_bearing: str | None = None
+    last_at: datetime | None = None
+    stale: bool = False
+    note: str = ""
 
 
 @dataclass
@@ -184,6 +202,8 @@ class Snapshot:
     preset: str = "default"
     radar: RadarSnapshot | None = None
     tide: TideSnapshot | None = None
+    lightning: LightningSnapshot | None = None
+    hazards: list[Alert] = field(default_factory=list)  # SIGMET/AIRMET in effect
 
     def primary(self) -> Observation | None:
         for o in self.observations:

@@ -11,6 +11,35 @@ from wxnow.models import Pin, TideSnapshot
 NEAR_KM = 50.0
 
 
+def nearest_tide_station(
+    stations: list,
+    lat: float,
+    lon: float,
+    *,
+    near_km: float = NEAR_KM,
+) -> tuple[dict, float] | None:
+    """Pick the closest water-level / tide station within near_km."""
+    best = None
+    best_d = near_km
+    for st in stations:
+        if not isinstance(st, dict):
+            continue
+        typ = str(st.get("type") or st.get("kind") or "").lower()
+        if typ in {"c", "current", "currents", "met", "winds"}:
+            continue
+        try:
+            slat = float(st["lat"])
+            slon = float(st.get("lng") if st.get("lng") is not None else st["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        d = haversine_km(lat, lon, slat, slon)
+        if d < best_d:
+            best, best_d = st, d
+    if best is None:
+        return None
+    return best, best_d
+
+
 def _parse_iso(s: str | None) -> datetime | None:
     if not s:
         return None
@@ -21,25 +50,44 @@ def _parse_iso(s: str | None) -> datetime | None:
 
 
 async def fetch_tides(pin: Pin, http: Http) -> TideSnapshot | None:
-    url = (
-        "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/"
-        f"lat/{pin.lat:.4f}/lng/{pin.lon:.4f}/radius/{int(NEAR_KM)}/stations.json"
-    )
-    r = await http.get_json(url, ttl=86400)
-    body = r.body if isinstance(r.body, dict) else {}
-    stations = body.get("stations") or []
-    best = None
-    best_d = NEAR_KM
-    for st in stations:
-        try:
-            lat, lon = float(st["lat"]), float(st.get("lng") if st.get("lng") is not None else st["lon"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        d = haversine_km(pin.lat, pin.lon, lat, lon)
-        if d < best_d:
-            best, best_d = st, d
-    if best is None:
+    # mdapi path form often returns currents-only; ask for waterlevels explicitly.
+    urls = [
+        (
+            "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/"
+            f"lat/{pin.lat:.4f}/lng/{pin.lon:.4f}/radius/{int(NEAR_KM)}/"
+            "stations.json?type=waterlevels"
+        ),
+        (
+            "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json"
+            f"?type=waterlevels&lat={pin.lat:.4f}&lon={pin.lon:.4f}&radius={int(NEAR_KM)}"
+        ),
+        (
+            "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/"
+            f"lat/{pin.lat:.4f}/lng/{pin.lon:.4f}/radius/{int(NEAR_KM)}/stations.json"
+        ),
+    ]
+    stations: list = []
+    for url in urls:
+        r = await http.get_json(url, ttl=86400)
+        body = r.body if isinstance(r.body, dict) else {}
+        rows = body.get("stations") or body.get("stationList") or []
+        if rows:
+            stations = list(rows)
+            break
+    picked = nearest_tide_station(stations, pin.lat, pin.lon)
+    if picked is None:
+        # mdapi radius queries often return currents-only; fall back to the
+        # water-level catalog and pick the nearest station within NEAR_KM.
+        cat = await http.get_json(
+            "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels",
+            ttl=86400,
+        )
+        body = cat.body if isinstance(cat.body, dict) else {}
+        stations = list(body.get("stations") or body.get("stationList") or [])
+        picked = nearest_tide_station(stations, pin.lat, pin.lon)
+    if picked is None:
         return None
+    best, best_d = picked
     sid = str(best.get("id") or best.get("stationId") or "")
     if not sid:
         return None
