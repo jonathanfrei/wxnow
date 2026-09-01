@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from wxnow.models import Observation, Pin, Snapshot
 from wxnow.units import (
     Units,
+    FT_PER_M,
     c_to_f,
     temp as conv_temp,
     wind as conv_wind,
@@ -164,7 +165,6 @@ def fmt_vis(meters: float | None, units: Units) -> str:
         if v >= 10:
             return f"{v:.0f} {u}"
         return f"{v:.1f} {u}"
-    # SM / mi — METAR 10+ 
     if v >= 9.9:
         return f"10+ {u}" if u == "sm" else f"10.00 {u}"
     return f"{v:.2f} {u}"
@@ -199,187 +199,19 @@ def fmt_precip(mm: float | None, units: Units) -> str:
     v, u = conv_precip(mm, units)
     if v is None:
         return "—"
-    if units == "metric":
-        return f"{v:.2f} {u}"
     return f"{v:.2f} {u}"
 
 
-def condition_kind(o: Observation) -> str:
-    if o.wx_code:
-        return wx_kind(o.wx_code)
-    # crude from phrase
-    c = (o.condition or "").lower()
-    if "thunder" in c:
-        return "storm"
-    if "snow" in c or "sleet" in c:
-        return "snow"
-    if "rain" in c or "drizzle" in c or "shower" in c:
-        return "rain"
-    if "fog" in c or "mist" in c or "haze" in c:
-        return "fog"
-    if "cloud" in c or "overcast" in c:
-        return "cloud"
-    return "clear"
-
-
-def condition_glyph(o: Observation) -> str:
-    return glyph_for(condition_kind(o))
-
-
-def beaufort_line(o: Observation) -> str:
-    force, label = beaufort(o.wind_mps)
-    if o.wind_mps is None:
-        return "—"
-    return f"B{force} {label}"
-
-
-def meter(frac: float, width: int = 12, fill: str = "█", empty: str = "░") -> str:
-    frac = max(0.0, min(1.0, frac))
-    n = int(round(frac * width))
-    return fill * n + empty * (width - n)
-
-
-def half_meter(frac: float, width: int = 10) -> str:
-    """Half-block meter."""
-    frac = max(0.0, min(1.0, frac))
-    cells = int(round(frac * width * 2))
-    full, rem = divmod(cells, 2)
-    return "█" * full + ("▌" if rem else "") + " " * (width - full - rem)
-
-
-def spark(values: list[float], width: int = 12) -> str:
-    if not values:
-        return "·" * min(width, 4)
-    blocks = "▁▂▃▄▅▆▇█"
-    lo, hi = min(values), max(values)
-    span = hi - lo or 1.0
-    if len(values) > width:
-        step = len(values) / width
-        vals = [values[int(i * step)] for i in range(width)]
-    else:
-        vals = values
-    out = []
-    for v in vals:
-        idx = int((v - lo) / span * (len(blocks) - 1))
-        out.append(blocks[max(0, min(len(blocks) - 1, idx))])
-    return "".join(out)
-
-
-def wind_rose(dir_deg: float | None, speed_mps: float | None, size: int = 7) -> str:
-    """Small compass with a marker on the FROM side."""
-    # 7 rows x 11 cols
-    rows = [
-        list("     N     "),
-        list("           "),
-        list("           "),
-        list("W    ·    E"),
-        list("           "),
-        list("           "),
-        list("     S     "),
-    ]
-    if dir_deg is None:
-        return "\n".join("".join(r) for r in rows)
-    import math
-    # FROM direction: marker on the rim toward the source
-    rad = math.radians(dir_deg)
-    # screen: x right, y down. North is up (row decreases).
-    # wind FROM deg: 0 = north, 90 = east
-    dx = math.sin(rad)
-    dy = -math.cos(rad)
-    cy, cx = 3, 5
-    r = 2
-    y = int(round(cy + dy * r))
-    x = int(round(cx + dx * r * 1.6))
-    y = max(1, min(5, y))
-    x = max(1, min(9, x))
-    ch = "●" if (speed_mps or 0) >= 1 else "○"
-    rows[y][x] = ch
-    rows[cy][cx] = "+"
-    return "\n".join("".join(r) for r in rows)
-
-
-def cloud_bars(o: Observation, width: int = 18) -> list[tuple[str, str, str]]:
-    """(label, height, bar) low-to-high."""
-    layers = [c for c in o.clouds if c.cover not in {"CLR", "SKC", "NCD", "NSC"}]
-    layers = sorted(layers, key=lambda c: c.base_ft or 0)
-    out = []
-    for c in layers:
-        frac = c.oktas / 8.0
-        bar = "█" * int(round(frac * width)) + "░" * (width - int(round(frac * width)))
-        ht = f"{c.base_ft:,} ft" if c.base_ft is not None else "—"
-        out.append((c.cover, ht, bar))
-    return out
-
-
-def uv_dots(uvi: float | None, n: int = 11) -> str:
-    if uvi is None:
-        return "—"
-    filled = max(0, min(n, int(round(uvi))))
-    return "■" * filled + "□" * (n - filled)
-
-
-def aqi_dots(aqi: float | None, n: int = 10) -> str:
-    if aqi is None:
-        return "—"
-    filled = max(0, min(n, int(round((aqi / 200) * n))))
-    return "■" * filled + "□" * (n - filled)
-
-
-def vis_dots(meters: float | None, n: int = 10) -> str:
+def fmt_wave(meters: float | None, units: Units) -> str:
     if meters is None:
         return "—"
-    frac = min(1.0, meters / 16093.44)
-    filled = int(round(frac * n))
-    return "●" * filled + "○" * (n - filled)
+    if units == "metric":
+        return f"{meters:.1f} m"
+    return f"{meters * FT_PER_M:.1f} ft"
 
 
-def station_offset_line(o: Observation, pin: Pin, units: Units) -> str:
-    if o.station is None:
-        return "model grid at pin" if o.kind != "observation" else "no station"
-    bits = []
-    if o.distance_km is not None:
-        d = fmt_dist(o.distance_km, units)
-        br = o.bearing or ""
-        bits.append(f"{d} {br} of pin".strip())
-    if o.elev_delta_m is not None:
-        v, u = conv_elev(o.elev_delta_m, units)
-        if v is not None:
-            sign = "+" if v >= 0 else ""
-            bits.append(f"elev {fmt_elev(o.station.elevation_m, units)} ({sign}{v:.0f} {u})")
-    elif o.station.elevation_m is not None:
-        bits.append(f"elev {fmt_elev(o.station.elevation_m, units)}")
-    return " · ".join(bits) if bits else o.station.id
-
-
-def palette_class(snap: Snapshot) -> str:
-    o = snap.primary()
-    if o is None:
-        return "wx-clear"
-    kind = condition_kind(o)
-    if kind == "storm":
-        return "wx-storm"
-    if o.wx_code and "TS" in (o.wx_code or ""):
-        return "wx-storm"
-    if o.humidity_pct and o.humidity_pct >= 70 and o.temperature_c and o.temperature_c >= 24:
-        return "wx-muggy"
-    if o.temperature_c is not None and o.temperature_c <= 5:
-        return "wx-cold"
-    if kind == "fog":
-        return "wx-fog"
-    return "wx-clear"
-
-
-def copy_summary(snap: Snapshot, units: Units) -> str:
-    o = snap.primary()
-    if o is None:
-        return f"{snap.pin.name}: no observation"
-    t = fmt_temp(o.temperature_c, units, nowcast=o.kind != "observation")
-    w = fmt_wind(o, units)
-    p = fmt_press(o.slp_hpa, units)
-    age = age_clock(o.observed_at, snap.fetched_at, o.kind, stale=o.stale, fetched_at=o.fetched_at)
-    wx = o.wx_text or o.condition or ""
-    return (
-        f"{snap.pin.name}  {t}  {wx}  {w}  {p}  "
-        f"{o.source_label} {age}"
-        + (f"  ({coords(snap.pin.lat, snap.pin.lon)})" if snap.pin.guessed else "")
-    )
+def precip_onset_phrase(o: Observation, now: datetime) -> str | None:
+    """'rain started 14m ago' from observation history, or None if unknown."""
+    if o.precip_onset_at is None or not o.precip_onset_kind:
+        return None
+    return f"{o.precip_onset_kind} started {_age_value(o.precip_onset_at, now)} ago"
