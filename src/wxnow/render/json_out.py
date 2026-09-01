@@ -18,6 +18,7 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
             "timezone": pin.timezone,
             "resolver": pin.resolver,
             "guessed": pin.guessed,
+            "locked_station": pin.locked_station,
         },
         "fetched_at": snap.fetched_at.isoformat(),
         "primary": snap.primary_id,
@@ -47,7 +48,31 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
             "age_secs": snap.radar.age_secs,
             "note": snap.radar.note,
             "stale": snap.radar.stale,
+            "grid": snap.radar.grid,
         },
+        "lightning": None if snap.lightning is None else {
+            "source": snap.lightning.source,
+            "count_20km": snap.lightning.count_20km,
+            "count_40km": snap.lightning.count_40km,
+            "nearest_km": snap.lightning.nearest_km,
+            "nearest_bearing": snap.lightning.nearest_bearing,
+            "last_at": snap.lightning.last_at.isoformat() if snap.lightning.last_at else None,
+            "stale": snap.lightning.stale,
+            "note": snap.lightning.note,
+        },
+        "hazards": [
+            {
+                "id": a.id,
+                "event": a.event,
+                "headline": a.headline,
+                "severity": a.severity,
+                "onset": a.onset.isoformat() if a.onset else None,
+                "ends": a.ends.isoformat() if a.ends else None,
+                "source": a.source,
+                "contains_pin": a.contains_pin,
+            }
+            for a in snap.hazards
+        ],
         "tide": None if snap.tide is None else {
             "station_id": snap.tide.station_id,
             "station_name": snap.tide.station_name,
