@@ -14,8 +14,6 @@ from wxnow.models import Observation, Snapshot
 from wxnow.units import C_TO_F, Units
 from wxnow.units import wind as conv_wind
 
-# Readable on the dark card palette. Do not use Rich [dim] — it inherits the
-# parent color, which went black-on-black under the old auto-day theme.
 MUTED = "#b4c0cc"
 INK = "#e8eef4"
 CYAN = "#7ad0f0"
@@ -26,32 +24,6 @@ GREEN = "#5fdc82"
 
 def muted(text: str) -> str:
     return f"[{MUTED}]{text}[/]"
-
-
-DIGITS = {
-    "0": ("┌─┐", "│ │", "└─┘"),
-    "1": (" ┐ ", " │ ", " ┴ "),
-    "2": ("┌─┐", "┌─┘", "└─┘"),
-    "3": ("┌─┐", " ├┤", "└─┘"),
-    "4": ("┐ ┐", "└─┤", "  ┘"),
-    "5": ("┌─┐", "└─┐", "└─┘"),
-    "6": ("┌─┐", "├─┐", "└─┘"),
-    "7": ("┌─┐", "  │", "  ┘"),
-    "8": ("┌─┐", "├─┤", "└─┘"),
-    "9": ("┌─┐", "└─┤", "└─┘"),
-    ".": ("   ", "   ", " · "),
-    "-": ("   ", "───", "   "),
-    " ": ("   ", "   ", "   "),
-}
-
-
-def big_number(text: str) -> str:
-    rows = ["", "", ""]
-    for ch in text:
-        glyph = DIGITS.get(ch, (" ", " ", " "))
-        for i in range(3):
-            rows[i] += glyph[i] + " "
-    return "\n".join(rows)
 
 
 def header_line(snap: Snapshot, now_local_s: str | None = None) -> str:
@@ -79,16 +51,10 @@ def hero_markup(snap: Snapshot, units: Units, *, compact: bool = False) -> str:
     tmin = fmt_temp(o.today_min_c, units)
     tmax = fmt_temp(o.today_max_c, units)
     sub = muted(f"feels {feels}    dew {dew} · wet-bulb {wb} · today obs {tmin} / {tmax}")
-    if compact:
-        return (
-            f"[bold {CYAN}]{num}{unit}[/]  {glyph}  [bold {INK}]{cond}[/]\n"
-            f"{sub}"
-        )
-    big = big_number(num)
-    lines = big.split("\n")
-    unit_col = [f" {unit}", "", ""]
-    glued = "\n".join(f"[bold {CYAN}]{a}[/][bold {CYAN}]{b}[/]" for a, b in zip(lines, unit_col))
-    return glued + f"   {glyph}  [bold {INK}]{cond}[/]\n{sub}"
+    return (
+        f"[bold {CYAN}]{num}[/][{MUTED}]{unit}[/]   {glyph}  [bold {INK}]{cond}[/]\n"
+        f"{sub}"
+    )
 
 
 def station_markup(snap: Snapshot, units: Units) -> str:
@@ -145,7 +111,6 @@ def gauge_wind(o: Observation, units: Units) -> str:
 def mini_compass(deg: float | None) -> str:
     if deg is None:
         return muted("N · E · S · W")
-    # four-point with the FROM side marked
     names = [("N", 0), ("E", 90), ("S", 180), ("W", 270)]
     parts = []
     for name, ang in names:
@@ -223,7 +188,6 @@ GAUGE_SLOT_IDS = ("g-hum", "g-pres", "g-wind", "g-vis", "g-uv", "g-aqi")
 
 
 def render_gauges(snap: Snapshot, units: Units) -> dict[str, str]:
-    """Map widget id -> markup for the active preset."""
     o = snap.primary()
     if o is None:
         return {sid: muted("—") for sid in GAUGE_SLOT_IDS}
@@ -280,7 +244,6 @@ def wind_precip_markup(o: Observation, units: Units) -> str:
 
 
 def radial_field(dir_deg: float | None, mps: float | None, w: int = 32, h: int = 5) -> str:
-    """Sparse radial ticks; highlight the FROM sector in green (concept image 2)."""
     cx, cy = w // 2, h // 2
     grid = [[" " for _ in range(w)] for _ in range(h)]
     for row in range(h):
@@ -292,20 +255,18 @@ def radial_field(dir_deg: float | None, mps: float | None, w: int = 32, h: int =
                 grid[row][col] = "·"
     if dir_deg is not None:
         rad = math.radians(dir_deg)
-        # FROM: 0=N (up, -y), 90=E (+x)
         for t in (0.35, 0.55, 0.75, 0.95):
             x = int(round(cx + math.sin(rad) * t * (w / 2)))
             y = int(round(cy - math.cos(rad) * t * (h / 2)))
             if 0 <= y < h and 0 <= x < w:
                 grid[y][x] = "●"
     body = "\n".join("".join(r) for r in grid)
-    # paint dots: we wrap the whole thing dim, then can't easily color individual
     return muted(body)
 
 
 def radar_markup(snap: Snapshot) -> str:
     r = snap.radar
-    st = snap.pin.radar_station or "—"
+    st = (snap.pin.radar_station or "").strip() or "—"
     if r is None:
         return f"{muted('RADAR  snapshot')}\n{muted('no current frame')}\n{muted('station ' + st)}"
     age = "—"
@@ -313,9 +274,11 @@ def radar_markup(snap: Snapshot) -> str:
         m = int(r.age_secs // 60)
         age = f"{m}m ago" if m else f"{int(r.age_secs)}s ago"
     stale = "  STALE" if r.stale else ""
+    station = (r.station or st).strip() or "—"
+    line = f"{station} · {age}{stale}"
     return (
         f"{muted('RADAR  snapshot')}\n"
-        f"[bold {INK}]{r.station or st}[/]  {age}{stale}\n"
+        f"[bold {INK}]{line}[/]\n"
         f"{muted(r.note)}"
     )
 
@@ -350,7 +313,6 @@ def mosaic_card(snap: Snapshot, units: Units) -> str:
 def sources_markup(snap: Snapshot, units: Units) -> str:
     now = snap.fetched_at
     conflict_temp = any(s.field == "temperature_c" and s.conflict for s in snap.spreads)
-    # fixed-width columns
     hdr = f"{'SOURCE':<16} {'TEMP':>6}  {'WIND':<14} {'RH':>4}  {'PRESS':<10} {'AGE':>6}"
     lines = [muted("SOURCES  now"), muted(hdr)]
     for o in snap.observations:
@@ -390,7 +352,6 @@ def conflict_markup(snap: Snapshot, units: Units) -> str:
 
 
 def alerts_markup(snap: Snapshot) -> tuple[str, str]:
-    """Return (markup, class)."""
     if not snap.alerts:
         return muted("No alerts in effect for this point"), ""
     events = " · ".join(a.event for a in snap.alerts[:3])

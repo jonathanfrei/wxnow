@@ -189,8 +189,9 @@ SearchScreen, HelpScreen, AlertScreen, ExplainScreen, PinsScreen {
 }
 
 .help-box {
-    width: 80;
+    width: 88;
     height: auto;
+    padding: 1 2;
 }
 
 .alert-box {
@@ -372,4 +373,8 @@ Screen.short #sources {
 .theme-high {
     background: #000;
     color: #fff;
+}
+
+Screen.reduced-motion Sparkline {
+    display: none;
 }

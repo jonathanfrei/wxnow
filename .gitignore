@@ -9,3 +9,4 @@ build/
 *.toml.bak
 .python-version
 .DS_Store
+docs/screenshots/*.png
