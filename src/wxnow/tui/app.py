@@ -242,7 +242,11 @@ class WxNowApp(App):
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
         self.query_one("#radar", Static).update(radar_markup(snap))
-        self.query_one("#lightning", Static).update(lightning_markup(snap, units))
+        lightning_pane = self.query_one("#lightning", Static)
+        lightning_on = lightning_visible(snap)
+        lightning_pane.display = lightning_on
+        if lightning_on:
+            lightning_pane.update(lightning_markup(snap, units))
         self.query_one("#tide", Static).update(tide_markup(snap, units))
         hazards = self.query_one("#hazards", Static)
         hazards.update(hazards_markup(snap))
@@ -563,6 +567,17 @@ class WxNowApp(App):
                 self._paint(self.snap)
             except Exception:
                 pass
+
+
+def lightning_visible(snap: Snapshot) -> bool:
+    """Hide the lightning pane when there is no feed instead of a dead box.
+
+    The lightning plugin needs Xweather credentials, so keyless configs get
+    snap.lightning = None and previously showed "feed disabled or
+    unavailable" permanently. Hidden panes are already skipped in tab order
+    by _visible_panes, and context-row stretches the remaining panes.
+    """
+    return snap.lightning is not None
 
 
 async def run_tui(cfg: Config, query: str | None, *, offline: bool = False) -> None:

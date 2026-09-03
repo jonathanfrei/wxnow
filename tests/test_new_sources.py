@@ -65,3 +65,25 @@ def test_lightning_counts_only_observed_strikes_by_radius():
     assert snap.count_40km == 2
     assert snap.nearest_km is not None
     assert not snap.stale
+
+
+def test_lightning_pane_hidden_without_feed():
+    from wxnow.models import Snapshot
+    from wxnow.tui.app import lightning_visible
+    from wxnow.tui.widgets import lightning_markup
+    from wxnow.units import Units
+
+    units: Units = "metric"
+    now = datetime.now(timezone.utc)
+    empty = Snapshot(pin=PIN, fetched_at=now, observations=[], primary_id=None)
+    assert lightning_visible(empty) is False
+    assert "disabled or unavailable" in lightning_markup(empty, units)
+    fed = Snapshot(
+        pin=PIN, fetched_at=now, observations=[], primary_id=None,
+        lightning=snapshot_from_rows(
+            [{"loc": {"lat": 36.20, "long": -95.99},
+              "obTimestamp": (now - timedelta(seconds=30)).timestamp()}],
+            PIN, now,
+        ),
+    )
+    assert lightning_visible(fed) is True
