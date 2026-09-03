@@ -340,10 +340,12 @@ def tide_markup(snap: Snapshot, units: Units) -> str:
     )
 
 
-def lightning_markup(snap: Snapshot) -> str:
+def lightning_markup(snap: Snapshot, *, enabled: bool = True) -> str:
     L = snap.lightning
     if L is None:
-        return f"{muted('LIGHTNING')}\n{muted('no feed')}"
+        if not enabled:
+            return f"{muted('LIGHTNING')}\n{muted('disabled — add lightning to sources.enabled')}"
+        return f"{muted('LIGHTNING')}\n{muted('unavailable — fetch failed, see warnings')}"
     if L.count_40km == 0:
         return f"{muted('LIGHTNING')}\n[bold {INK}]quiet[/]\n{muted(L.note)}"
     age = "—"

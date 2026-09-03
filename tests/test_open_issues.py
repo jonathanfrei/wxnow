@@ -275,3 +275,40 @@ def test_airnow_skipped_without_key():
     assert "sigmet" in ids
     assert "sigmet" in DEFAULT_ENABLED
     assert "lightning" in DEFAULT_ENABLED
+
+
+def test_stale_config_missing_both_sigmet_and_lightning_is_upgraded(tmp_path):
+    from wxnow.config import load_config
+
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[sources]\nenabled = ["metar", "nws", "nws-alerts", "open-meteo", '
+        '"open-meteo-aq", "radar", "tides", "buoy"]\n'
+    )
+    cfg = load_config(path)
+    assert "sigmet" in cfg.enabled
+    assert "lightning" in cfg.enabled
+
+
+def test_selective_lightning_opt_out_is_respected(tmp_path):
+    from wxnow.config import load_config
+
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[sources]\nenabled = ["metar", "nws", "nws-alerts", "open-meteo", '
+        '"open-meteo-aq", "radar", "tides", "buoy", "sigmet"]\n'
+    )
+    cfg = load_config(path)
+    assert "sigmet" in cfg.enabled
+    assert "lightning" not in cfg.enabled
+
+
+def test_lightning_pane_hidden_only_when_disabled_and_empty():
+    from wxnow.tui.app import lightning_visible
+    from wxnow.tui.widgets import lightning_markup
+
+    assert lightning_visible(_snap(lightning=None), ["metar"]) is False
+    assert "disabled" in lightning_markup(_snap(lightning=None), enabled=False)
+    assert lightning_visible(_snap(lightning=None), ["metar", "lightning"]) is True
+    assert "unavailable" in lightning_markup(_snap(lightning=None), enabled=True)
+    assert lightning_visible(_snap(lightning=LightningSnapshot(source="x")), ["metar"]) is True

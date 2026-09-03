@@ -100,6 +100,7 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.primary = str(src["primary"])
     if src.get("enabled"):
         cfg.enabled = [str(x) for x in src["enabled"]]
+        _upgrade_stale_enabled(cfg)
     fill = src.get("fill") or {}
     if isinstance(fill, dict) and fill:
         cfg.fill.update({str(k): str(v) for k, v in fill.items() if v})
@@ -124,6 +125,21 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.notify_alert_severity = str(ntf["alert_severity"]).lower()
     if "lightning" in ntf:
         cfg.notify_lightning = bool(ntf["lightning"])
+
+
+# Plugins added after some users already had a config file. A config that
+# is missing *both* was written before either existed, so it is a stale
+# default rather than a deliberate opt-out — append them in DEFAULT order.
+# A config missing only one is treated as a deliberate choice and left alone.
+LATE_DEFAULT_PLUGINS = ("sigmet", "lightning")
+
+
+def _upgrade_stale_enabled(cfg: Config) -> None:
+    missing = [sid for sid in LATE_DEFAULT_PLUGINS if sid not in cfg.enabled]
+    if len(missing) == len(LATE_DEFAULT_PLUGINS):
+        for sid in DEFAULT_ENABLED:
+            if sid in missing and sid not in cfg.enabled:
+                cfg.enabled.append(sid)
 
 
 def _threshold(value: Any, name: str) -> float | None:

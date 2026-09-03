@@ -243,7 +243,11 @@ class WxNowApp(App):
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units, now=snap.fetched_at))
         self.query_one("#radar", Static).update(radar_markup(snap))
-        self.query_one("#lightning", Static).update(lightning_markup(snap))
+        lightning_pane = self.query_one("#lightning", Static)
+        lightning_on = lightning_visible(snap, self.cfg.enabled)
+        lightning_pane.display = lightning_on
+        if lightning_on:
+            lightning_pane.update(lightning_markup(snap, enabled="lightning" in self.cfg.enabled))
         self.query_one("#tide", Static).update(tide_markup(snap, units))
         self.query_one("#sources", Static).update(sources_markup(snap, units))
         self.query_one("#conflict", Static).update(conflict_markup(snap, units))
@@ -520,6 +524,17 @@ class WxNowApp(App):
                 self._paint(self.snap)
             except Exception:
                 pass
+
+
+def lightning_visible(snap: Snapshot, enabled: list[str]) -> bool:
+    """Hide the lightning pane instead of showing an empty box.
+
+    The pane is hidden only when the plugin is disabled in config *and*
+    there is no snapshot (stale configs predate the plugin). When enabled
+    but the fetch failed, the pane stays visible with an honest
+    "unavailable" note so failures are not silent.
+    """
+    return not (snap.lightning is None and "lightning" not in enabled)
 
 
 async def run_tui(cfg: Config, query: str | None, *, offline: bool = False) -> None:
