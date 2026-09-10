@@ -80,6 +80,8 @@ def snapshot_dict(snap: Snapshot) -> dict[str, Any]:
             "water_level_m": snap.tide.water_level_m,
             "water_temp_c": snap.tide.water_temp_c,
             "next_event": snap.tide.next_event,
+            "next_at": snap.tide.next_at.isoformat() if snap.tide.next_at else None,
+            "observed_at": snap.tide.observed_at.isoformat() if snap.tide.observed_at else None,
         },
         "spreads": [
             {

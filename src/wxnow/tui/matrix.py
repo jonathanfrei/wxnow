@@ -111,11 +111,12 @@ class MatrixScreen(Screen):
             if o.source_id == self.snap.primary_id:
                 name.stylize("bold")
             temp_cell = Text(temp)
-            if "temperature_c" in conflict and o.temperature_c is not None:
-                from wxnow.tui.widgets import palette_color
-                temp_cell.stylize(f"bold {palette_color('amber')}")
             if o.stale:
                 name.stylize("#7a8794")
+                temp_cell.stylize("#7a8794")
+            elif "temperature_c" in conflict and o.temperature_c is not None:
+                from wxnow.tui.widgets import palette_color
+                temp_cell.stylize(f"bold {palette_color('amber')}")
             table.add_row(
                 name, o.kind_label, age, dist, temp_cell, feels, dew, rh, wind, gust, vis, slp, wx, uv, aqi,
                 key=o.source_id,
@@ -172,9 +173,9 @@ class MatrixScreen(Screen):
                 bits.append(f"{sign}{v:.0f} {u}")
         elevation = "[#b4c0cc]" + "  ·  ".join(bits) + "[/]" if bits else ""
         hazards = ""
-        if self.snap.preset == "aviation":
+        if self.snap.hazards:
             hazards = "\n\n[bold #f0c35a]ACTIVE HAZARDS AT PIN[/]\n" + (
-                "\n".join(h.event for h in self.snap.hazards) if self.snap.hazards else "none"
+                "\n".join(h.event for h in self.snap.hazards)
             )
         elev.update(elevation + hazards)
 

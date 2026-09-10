@@ -221,6 +221,11 @@ async def resolve(query: str | None, http: Http) -> Pin:
         row = await lookup_airport(query, http) or await lookup_airport("K" + query.upper(), http)
         if row and row.get("lat") is not None:
             return pin_from_airport(row, query)
+        hits = await nominatim_search(query, http, limit=1)
+        if hits:
+            h = hits[0]
+            return Pin(query=query, name=h.name, lat=h.lat, lon=h.lon, resolver="nominatim")
+        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for IATA {query.upper()!r}")
     hits = await nominatim_search(query, http, limit=1)
     if hits:
         h = hits[0]

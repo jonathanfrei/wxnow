@@ -117,13 +117,15 @@ def fmt_temp_short(c: float | None, units: Units, *, nowcast: bool = False) -> s
     return fmt_temp(c, units, nowcast=nowcast, with_unit=True)
 
 
-def hero_temp(c: float | None, units: Units) -> tuple[str, str]:
+def hero_temp(c: float | None, units: Units, *, nowcast: bool = False) -> tuple[str, str]:
     """Return (number, unit) for the big readout."""
     v, u = conv_temp(c, units)
     if v is None:
         return "—", u
     if units == "metric":
         return f"{v:.1f}", "°C"
+    if nowcast:
+        return f"{v:.1f}", "°F"
     return f"{v:.0f}", "°F"
 
 

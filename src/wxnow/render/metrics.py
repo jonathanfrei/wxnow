@@ -5,10 +5,10 @@ from __future__ import annotations
 from wxnow.models import Snapshot
 
 
-def _labels(station: str, source: str) -> str:
+def _labels(station: str, source: str, kind: str) -> str:
     def esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace('"', '\\"')
-    return f'station="{esc(station)}",source="{esc(source)}"'
+    return f'station="{esc(station)}",source="{esc(source)}",kind="{esc(kind)}"'
 
 
 def render_metrics(snap: Snapshot) -> str:
@@ -31,7 +31,7 @@ def render_metrics(snap: Snapshot) -> str:
     now = snap.fetched_at
     for o in snap.observations:
         st = o.station.id if o.station else o.source_id
-        lab = _labels(st, o.source_id)
+        lab = _labels(st, o.source_id, o.kind)
         if o.temperature_c is not None:
             lines.append(f"wxnow_temperature_celsius{{{lab}}} {o.temperature_c:.3f}")
         if o.humidity_pct is not None:

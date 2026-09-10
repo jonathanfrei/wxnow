@@ -58,7 +58,7 @@ def hero_markup(snap: Snapshot, units: Units, *, compact: bool = False) -> str:
     o = snap.primary()
     if o is None:
         return "[yellow]No observation.[/]"
-    num, unit = hero_temp(o.temperature_c, units)
+    num, unit = hero_temp(o.temperature_c, units, nowcast=o.kind != "observation")
     glyph = condition_glyph(o)
     cond = o.condition or o.wx_text or "—"
     feels = fmt_temp(o.apparent_c, units, nowcast=o.kind != "observation")
@@ -143,17 +143,18 @@ def gauge_vis(o: Observation, units: Units) -> str:
     return f"{muted('VISIBILITY')}\n[bold {INK}]{v}[/]\n[{CYAN}]{vis_dots(o.visibility_m, 10)}[/]"
 
 
-def gauge_uv(o: Observation) -> str:
+def gauge_uv(o: Observation, *, is_model: bool = False) -> str:
     if o.uv_index is None:
         return f"{muted('UV')}\n[bold {INK}]—[/]\n{muted('no sensor')}"
     cat = uv_category(o.uv_index) or ""
     n = max(0, min(11, int(round(o.uv_index))))
     bar = f"[{AMBER}]" + "■" * n + "[/]" + muted("□" * (11 - n))
     style = AMBER if o.uv_index >= 6 else GREEN
-    return f"{muted('UV')}\n[{style}]{o.uv_index:.0f} {cat}[/]\n{bar}"
+    tag = f"\n{muted('· model')}" if is_model else ""
+    return f"{muted('UV')}\n[{style}]{o.uv_index:.0f} {cat}[/]\n{bar}{tag}"
 
 
-def gauge_aqi(o: Observation) -> str:
+def gauge_aqi(o: Observation, *, is_model: bool = False) -> str:
     if o.aqi_us is None:
         return f"{muted('AQI')}\n[bold {INK}]—[/]\n{muted('no feed')}"
     cat = o.aqi_category or ""
@@ -164,7 +165,8 @@ def gauge_aqi(o: Observation) -> str:
     if o.aqi_us > 150:
         color = "red"
     bar = f"[{color}]" + "■" * n + "[/]" + muted("□" * (10 - n))
-    return f"{muted('AQI')}\n[{color}]{o.aqi_us:.0f} {cat}[/]\n{bar}"
+    tag = f"\n{muted('· model')}" if is_model else ""
+    return f"{muted('AQI')}\n[{color}]{o.aqi_us:.0f} {cat}[/]\n{bar}{tag}"
 
 
 def gauge_ceiling(o: Observation, units: Units) -> str:
@@ -214,8 +216,8 @@ def render_gauges(snap: Snapshot, units: Units) -> dict[str, str]:
         "pressure": lambda: gauge_pressure(o, units),
         "wind": lambda: gauge_wind(o, units),
         "visibility": lambda: gauge_vis(o, units),
-        "uv": lambda: gauge_uv(uv_o),
-        "aqi": lambda: gauge_aqi(aqi_o),
+        "uv": lambda: gauge_uv(uv_o, is_model=uv_o.kind != "observation"),
+        "aqi": lambda: gauge_aqi(aqi_o, is_model=aqi_o.kind != "observation"),
         "ceiling": lambda: gauge_ceiling(o, units),
         "wetbulb": lambda: gauge_wetbulb(o, units),
         "dew": lambda: gauge_dew(o, units),

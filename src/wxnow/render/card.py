@@ -25,18 +25,19 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     pin = snap.pin
     o = snap.primary()
     now = snap.fetched_at
+    MUTED = "#b4c0cc"
     guessed = "  [IP guess]" if pin.guessed else ""
     header = Text.assemble(
         (pin.name.upper(), "bold"),
-        (f"  {coords(pin.lat, pin.lon)}", "dim"),
-        (f"  {clock(now, pin)}{guessed}", "dim"),
+        (f"  {coords(pin.lat, pin.lon)}", MUTED),
+        (f"  {clock(now, pin)}{guessed}", MUTED),
     )
     live = "LIVE" if not snap.offline else "OFFLINE"
     live_style = "green" if not snap.offline else "yellow"
     status = Text.assemble(
         ("● ", live_style),
         (live, live_style),
-        (f"  ·  {snap.sources_ok}/{snap.sources_total} providers responding", "dim"),
+        (f"  ·  {snap.sources_ok}/{snap.sources_total} providers responding", MUTED),
     )
 
     if o is None:
@@ -61,20 +62,20 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     hero = Text()
     hero.append(f"{t}  ", style="bold cyan")
     hero.append(f"{glyph}  {cond}\n")
-    hero.append(f"feels {feels}", style="dim")
-    hero.append(f"   dew {dew} · wet-bulb {wb} · today obs {tmin} / {tmax}", style="dim")
+    hero.append(f"feels {feels}", style=MUTED)
+    hero.append(f"   dew {dew} · wet-bulb {wb} · today obs {tmin} / {tmax}", style=MUTED)
 
     st = Text()
     if o.station:
         st.append("PRIMARY  ", style="bold green")
         st.append(f"{o.station.id}  {o.station.name}\n")
-        st.append(station_offset_line(o, pin, units) + "\n", style="dim")
+        st.append(station_offset_line(o, pin, units) + "\n", style=MUTED)
         st.append(
             f"{o.source_label}  {when_obs(o, pin)}  ·  age {age_clock(o.observed_at, now, o.kind, stale=o.stale, fetched_at=o.fetched_at)}\n",
-            style="dim",
+            style=MUTED,
         )
         flags = " · ".join(o.quality_flags) or "—"
-        st.append(flags, style="dim")
+        st.append(flags, style=MUTED)
     else:
         st.append("NOWCAST  Open-Meteo (no station)", style="magenta")
 
@@ -143,7 +144,20 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
     for row in snap.observations:
         tstyle = "yellow" if conflict_temp else ""
         if row.stale:
-            tstyle = "dim"
+            tstyle = MUTED
+            cells = [
+                Text(row.source_label, style=MUTED),
+                Text(fmt_temp(row.temperature_c, units, nowcast=row.kind != "observation"), style=MUTED),
+                Text(fmt_wind(row, units), style=MUTED),
+            ]
+            if not compact:
+                cells.extend([
+                    Text(f"{row.humidity_pct:.0f}%" if row.humidity_pct is not None else "—", style=MUTED),
+                    Text(fmt_press(row.slp_hpa, units), style=MUTED),
+                ])
+            cells.append(Text(age_clock(row.observed_at, now, row.kind, stale=row.stale, fetched_at=row.fetched_at), style=MUTED))
+            src.add_row(*cells)
+            continue
         cells = [
             row.source_label,
             Text(fmt_temp(row.temperature_c, units, nowcast=row.kind != "observation"), style=tstyle),
@@ -167,15 +181,27 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
             trusted = labels.get(snap.primary_id or "", snap.primary_id or "primary")
             conflict_line.append(f"△  temp {delta:.0f}{u} across sources — {trusted} trusted", style="yellow")
     if not conflict_line.plain:
-        conflict_line.append("sources agree within threshold", style="dim")
+        conflict_line.append("sources agree within threshold", style=MUTED)
 
     if snap.alerts:
         alert_txt = Text("⚠  " + " · ".join(a.event for a in snap.alerts[:3]), style="bold yellow")
     else:
-        alert_txt = Text("No alerts in effect for this point", style="dim")
+        alert_txt = Text("No alerts in effect for this point", style=MUTED)
 
     warn = Text("\n".join(snap.warnings), style="yellow") if snap.warnings else Text("")
-    metar = Text(o.raw_metar or "", style="dim")
+    metar = Text(o.raw_metar or "", style=MUTED)
+    context_lines: list[Text] = []
+    if snap.radar is not None:
+        rage = "—"
+        if snap.radar.age_secs is not None:
+            m = int(snap.radar.age_secs // 60)
+            rage = f"{m}m ago" if m else f"{int(snap.radar.age_secs)}s ago"
+        rst = (snap.radar.station or snap.pin.radar_station or "radar").strip() or "radar"
+        context_lines.append(Text(f"radar {rst} · {rage}" + ("  STALE" if snap.radar.stale else ""), style=MUTED))
+    if snap.tide is not None:
+        t = snap.tide
+        lvl = f"{t.water_level_m:.2f} m" if t.water_level_m is not None else "—"
+        context_lines.append(Text(f"tide {t.station_id} · {lvl} · {t.next_event or '—'}", style=MUTED))
 
     mid = Table.grid(expand=True)
     if compact:
@@ -198,8 +224,8 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
         skywind.add_row(sky, windp)
 
     if o.raw_metar and len(o.raw_metar) > inner:
-        metar = Text(o.raw_metar, style="dim", overflow="fold")
-    group = Group(header, status, mid, gauges, skywind, src, conflict_line, alert_txt, warn, metar)
+        metar = Text(o.raw_metar, style=MUTED, overflow="fold")
+    group = Group(header, status, mid, gauges, skywind, src, *context_lines, conflict_line, alert_txt, warn, metar)
     return Panel(
         group,
         title="wxnow · atmospheric status",
@@ -231,6 +257,8 @@ def render_oneline(snap: Snapshot, units: Units, *, fmt: str = "plain") -> str:
     text = f"{snap.pin.name}  {t}  {cond}  {w}  {o.source_label} {age}{flag}{alert}"
     if fmt == "tmux":
         return text.replace(" △", " #[fg=yellow]△#[default]").replace(" ⚠", " #[fg=red]⚠#[default]")
+    if fmt == "polybar":
+        return text.replace(" △", " %{F#ffff00}△%{F-}").replace(" ⚠", " %{F#ff0000}⚠%{F-}")
     if fmt == "waybar":
         import json
         cls = ["wxnow"]

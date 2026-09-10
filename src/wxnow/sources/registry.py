@@ -118,13 +118,19 @@ def load_builtin() -> None:
         return await fetch_buoy(pin, http)
 
     async def _airnow(pin: Pin, http: Http, cfg: Config):
-        return await fetch_airnow(pin, http, cfg.keys["airnow"])
+        key = cfg.keys.get("airnow") or cfg.keys.get("AIRNOW")
+        if not key:
+            return None
+        return await fetch_airnow(pin, http, key)
 
     async def _sigmet(pin: Pin, http: Http, cfg: Config):
         return await fetch_sigmet(pin, http)
 
     async def _lightning(pin: Pin, http: Http, cfg: Config):
-        return await fetch_lightning(pin, http, cfg.keys["lightning"])
+        key = cfg.keys.get("lightning") or cfg.keys.get("LIGHTNING")
+        if not key:
+            return None
+        return await fetch_lightning(pin, http, key)
 
     register(Plugin("metar", "METAR", "observation", "observation", fetch=_metar))
     register(Plugin("nws", "NWS", "observation", "observation", fetch=_nws))

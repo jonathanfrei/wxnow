@@ -225,7 +225,7 @@ class WxNowApp(App):
     def _paint(self, snap: Snapshot) -> None:
         units: Units = self.units  # type: ignore[assignment]
         self._layout_classes()
-        compact = self.size.width < 100 if self.size else False
+        compact = self.size.width < 110 if self.size else False
         o = snap.primary()
         self._paint_header()
         self.query_one("#hero", Static).update(hero_markup(snap, units, compact=compact))
@@ -250,7 +250,7 @@ class WxNowApp(App):
         self.query_one("#tide", Static).update(tide_markup(snap, units))
         hazards = self.query_one("#hazards", Static)
         hazards.update(hazards_markup(snap))
-        hazards.display = (snap.preset == "aviation")
+        hazards.display = bool(snap.hazards)
         self.query_one("#sources", Static).update(sources_markup(snap, units))
         self.query_one("#conflict", Static).update(conflict_markup(snap, units))
         text, cls = alerts_markup(snap)
@@ -297,6 +297,7 @@ class WxNowApp(App):
         cur = self.cfg.preset if self.cfg.preset in PRESETS else "default"
         nxt = names[(names.index(cur) + 1) % len(names)]
         self.cfg.preset = nxt
+        save_config(self.cfg)
         if self.snap:
             self.snap.preset = nxt
             self._paint(self.snap)
@@ -312,7 +313,7 @@ class WxNowApp(App):
     def action_cycle_source(self) -> None:
         if not self.snap or not self.snap.observations:
             return
-        ids = [o.source_id for o in primary_candidates(self.snap.observations)]
+        ids = [o.source_id for o in primary_candidates(self.snap.observations, self.snap.pin)]
         if not ids:
             return
         cur = self.snap.primary_id or ids[0]

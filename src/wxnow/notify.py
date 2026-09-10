@@ -69,10 +69,11 @@ def evaluate(snap: Snapshot, cfg: Config) -> list[Trip]:
     if aq and aq.aqi_us is not None and aqi_lim is not None and aq.aqi_us >= aqi_lim:
         trips.append(Trip("aqi", f"wxnow AQI {aq.aqi_us:.0f}", f"{snap.pin.name}: US AQI {aq.aqi_us:.0f} ({aq.aqi_category or ''})"))
     rank = {"unknown": 0, "minor": 1, "moderate": 2, "severe": 3, "extreme": 4}
-    need = rank.get(sev, 3) if sev else 3
-    for a in snap.alerts:
-        if rank.get((a.severity or "").lower(), 0) >= need:
-            trips.append(Trip(f"alert:{a.id or a.event}", f"wxnow {a.event}", a.headline or a.event))
+    if sev:
+        need = rank.get(sev, 3)
+        for a in snap.alerts:
+            if rank.get((a.severity or "").lower(), 0) >= need:
+                trips.append(Trip(f"alert:{a.id or a.event}", f"wxnow {a.event}", a.headline or a.event))
     if cfg.notify_lightning and snap.lightning and snap.lightning.count_40km:
         L = snap.lightning
         trips.append(Trip(
