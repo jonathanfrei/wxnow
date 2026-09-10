@@ -239,7 +239,9 @@ def observation_from_row(
 
 
 async def fetch_metar(pin: Pin, http: Http, *, prefer_id: str | None = None, hours: int = 18) -> Observation | None:
-    fetched_at = datetime.now(timezone.utc)
+    requested_at = datetime.now(timezone.utc)
+    fetched_at = requested_at
+    saw_stale = False
     icao = prefer_id
     if pin.resolver in {"icao", "iata"} and pin.query:
         q = pin.query.strip().upper()
@@ -254,6 +256,9 @@ async def fetch_metar(pin: Pin, http: Http, *, prefer_id: str | None = None, hou
     if icao:
         url = f"https://aviationweather.gov/api/data/metar?ids={icao}&format=json&hours={hours}"
         r = await http.get_json(url, ttl=60)
+        saw_stale = saw_stale or r.stale
+        if r.cache_fetched_at is not None:
+            fetched_at = r.cache_fetched_at
         if isinstance(r.body, list):
             rows = r.body
         elif isinstance(r.body, dict):
@@ -266,6 +271,9 @@ async def fetch_metar(pin: Pin, http: Http, *, prefer_id: str | None = None, hou
         bbox = f"{lat-0.5},{lon-0.5},{lat+0.5},{lon+0.5}"
         url = f"https://aviationweather.gov/api/data/metar?bbox={bbox}&format=json"
         r = await http.get_json(url, ttl=60)
+        saw_stale = saw_stale or r.stale
+        if r.cache_fetched_at is not None:
+            fetched_at = r.cache_fetched_at
         body = r.body if isinstance(r.body, list) else []
         # pick nearest
         best = None
@@ -281,13 +289,21 @@ async def fetch_metar(pin: Pin, http: Http, *, prefer_id: str | None = None, hou
         icao = best.get("icaoId")
         url = f"https://aviationweather.gov/api/data/metar?ids={icao}&format=json&hours={hours}"
         r = await http.get_json(url, ttl=60)
+        saw_stale = saw_stale or r.stale
+        if r.cache_fetched_at is not None:
+            fetched_at = r.cache_fetched_at
         rows = r.body if isinstance(r.body, list) else [best]
 
     if not rows:
         return None
     # AWC returns newest first
     latest = rows[0]
-    return observation_from_row(latest, pin, history_rows=rows, fetched_at=fetched_at)
+    obs = observation_from_row(latest, pin, history_rows=rows, fetched_at=fetched_at)
+    if saw_stale:
+        obs.stale = True
+        if "stale cache" not in obs.quality_flags:
+            obs.quality_flags.append("stale cache")
+    return obs
 
 
 async def fetch_nearby_metars(pin: Pin, http: Http, radius_km: float = 80.0) -> list[Observation]:

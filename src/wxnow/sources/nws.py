@@ -53,12 +53,17 @@ def _clouds(props: dict) -> list[CloudLayer]:
 
 
 async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
-    fetched_at = datetime.now(timezone.utc)
+    requested_at = datetime.now(timezone.utc)
+    fetched_at = requested_at
+    saw_stale = False
     pts = await http.get_json(
         f"https://api.weather.gov/points/{pin.lat:.4f},{pin.lon:.4f}",
         ttl=3600,
         accept=NWS_ACCEPT,
     )
+    saw_stale = saw_stale or pts.stale
+    if pts.cache_fetched_at is not None:
+        fetched_at = pts.cache_fetched_at
     if not isinstance(pts.body, dict) or "properties" not in pts.body:
         return None
     props = pts.body["properties"]
@@ -76,6 +81,9 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
     if not st_url:
         return None
     sts = await http.get_json(st_url, ttl=3600, accept=NWS_ACCEPT)
+    saw_stale = saw_stale or sts.stale
+    if sts.cache_fetched_at is not None:
+        fetched_at = sts.cache_fetched_at
     features = (sts.body or {}).get("features") if isinstance(sts.body, dict) else None
     if not features:
         return None
@@ -94,6 +102,9 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
         ttl=90,
         accept=NWS_ACCEPT,
     )
+    saw_stale = saw_stale or latest.stale
+    if latest.cache_fetched_at is not None:
+        fetched_at = latest.cache_fetched_at
     if not isinstance(latest.body, dict) or "properties" not in latest.body:
         return None
     p = latest.body["properties"]
@@ -103,6 +114,7 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
         ttl=180,
         accept=NWS_ACCEPT,
     )
+    saw_stale = saw_stale or hist.stale
     temps: list[SeriesPoint] = []
     press: list[SeriesPoint] = []
     tvals: list[float] = []
@@ -210,8 +222,10 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
     qc = (p.get("temperature") or {}).get("qualityControl") if isinstance(p.get("temperature"), dict) else None
     if qc and qc not in {"V", "C", None}:
         flags.append(f"QC {qc}")
+    if saw_stale:
+        flags.append("stale cache")
 
-    return Observation(
+    obs = Observation(
         source_id="nws",
         source_label=f"NWS {sid}",
         kind="observation",
@@ -251,7 +265,9 @@ async def fetch_nws(pin: Pin, http: Http) -> Observation | None:
         distance_km=dist,
         elev_delta_m=elev_delta,
         bearing=brg,
+        stale=saw_stale,
     )
+    return obs
 
 
 def _alert_color(severity: str, event: str) -> str:
@@ -289,7 +305,7 @@ async def fetch_nws_alerts(pin: Pin, http: Http) -> list[Alert]:
             ends=_parse_ts(p.get("ends") or p.get("expires")),
             source="nws",
             color=_alert_color(p.get("severity") or "", p.get("event") or ""),
-            contains_pin=True if contains is None else contains,
+            contains_pin=contains,
         ))
     # Drop alerts whose polygon we could test and which miss this point.
     return [a for a in out if a.contains_pin is not False]

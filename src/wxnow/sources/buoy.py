@@ -34,7 +34,10 @@ def _header_map(text: str) -> dict[str, int] | None:
     return None
 
 
-def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
+def parse_latest_obs(
+    text: str, pin: Pin, *, stale: bool = False,
+    fetched_at: datetime | None = None,
+) -> Observation | None:
     header = _header_map(text)
     lines = [ln for ln in (text or "").splitlines() if ln.strip() and not ln.startswith("#")]
     best = None
@@ -88,9 +91,10 @@ def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
         official=True,
         provider="NDBC",
     )
-    now = datetime.now(timezone.utc)
+    now = fetched_at or datetime.now(timezone.utc)
     brg = compass8(initial_bearing(pin.lat, pin.lon, lat, lon)) if best_d > 0.2 else None
     wx = f"waves {wvht:.1f} m" if wvht is not None else None
+    flags = ["buoy"] + (["stale cache"] if stale else [])
     return Observation(
         source_id="buoy",
         source_label=f"Buoy {stn}",
@@ -106,12 +110,13 @@ def parse_latest_obs(text: str, pin: Pin) -> Observation | None:
         slp_hpa=pres,
         wx_text=wx,
         condition=wx,
-        quality_flags=["buoy"],
+        quality_flags=flags,
         distance_km=best_d,
         bearing=brg,
         wave_height_m=wvht,
         water_temp_c=wtmp,
         raw_payload={"station": stn, "line": " ".join(t[:12]), "water_temp_c": wtmp, "wave_m": wvht},
+        stale=stale,
     )
 
 
@@ -120,4 +125,7 @@ async def fetch_buoy(pin: Pin, http: Http) -> Observation | None:
     text = r.body if isinstance(r.body, str) else (r.text or "")
     if not text:
         return None
-    return parse_latest_obs(text, pin)
+    return parse_latest_obs(
+        text, pin, stale=r.stale,
+        fetched_at=r.cache_fetched_at or datetime.now(timezone.utc),
+    )

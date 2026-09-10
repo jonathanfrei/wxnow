@@ -10,7 +10,9 @@ from wxnow.http import Http
 from wxnow.models import Observation, Pin, Station
 
 
-def observation_from_rows(rows: list[dict], pin: Pin, fetched_at: datetime) -> Observation | None:
+def observation_from_rows(
+    rows: list[dict], pin: Pin, fetched_at: datetime, *, stale: bool = False,
+) -> Observation | None:
     usable = [r for r in rows if r.get("AQI") is not None]
     if not usable:
         return None
@@ -33,6 +35,7 @@ def observation_from_rows(rows: list[dict], pin: Pin, fetched_at: datetime) -> O
     station_id = row.get("SiteName") or f"AIRNOW-{lat:.3f},{lon:.3f}"
     bearing = compass8(initial_bearing(pin.lat, pin.lon, lat, lon)) if distance > .15 else None
     category = row.get("Category") or {}
+    flags = (["distant monitor"] if distance > 40 else []) + (["stale cache"] if stale else [])
     return Observation(
         source_id="airnow", source_label=f"AirNow {station_name}",
         kind="observation", kind_label="EPA official", fetched_at=fetched_at,
@@ -40,7 +43,7 @@ def observation_from_rows(rows: list[dict], pin: Pin, fetched_at: datetime) -> O
         station=Station(str(station_id), str(station_name), lat, lon, kind="aq", official=True, provider="EPA AirNow"),
         aqi_us=float(row["AQI"]), aqi_category=category.get("Name") if isinstance(category, dict) else str(category),
         distance_km=distance, bearing=bearing, raw_payload=rows,
-        quality_flags=["distant monitor"] if distance > 40 else [],
+        quality_flags=flags, stale=stale,
     )
 
 
@@ -52,4 +55,7 @@ async def fetch_airnow(pin: Pin, http: Http, key: str) -> Observation | None:
     )
     result = await http.get_json(url, ttl=300)
     rows = result.body if isinstance(result.body, list) else []
-    return observation_from_rows(rows, pin, datetime.now(timezone.utc))
+    return observation_from_rows(
+        rows, pin, result.cache_fetched_at or datetime.now(timezone.utc),
+        stale=result.stale,
+    )

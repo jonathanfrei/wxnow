@@ -139,6 +139,6 @@ async def fetch_radar(pin: Pin, http: Http) -> RadarSnapshot | None:
         age_secs=age,
         station=pin.radar_station,
         note="current frame only — not a loop of what's coming",
-        stale=bool(age is not None and age > 15 * 60),
+        stale=bool(r.stale or (age is not None and age > 15 * 60)),
         grid=grid,
     )

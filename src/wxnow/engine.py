@@ -23,8 +23,10 @@ THRESHOLDS = {
 }
 
 
-def pick_primary(obs: list[Observation], preferred: str) -> str | None:
-    candidates = primary_candidates(obs)
+def pick_primary(
+    obs: list[Observation], preferred: str, pin: Pin | None = None,
+) -> str | None:
+    candidates = primary_candidates(obs, pin)
     by_id = {o.source_id: o for o in candidates}
     if preferred in by_id:
         return preferred
@@ -38,18 +40,30 @@ def pick_primary(obs: list[Observation], preferred: str) -> str | None:
     return None
 
 
-def _usable(o: Observation) -> bool:
+def _usable(o: Observation, pin: Pin | None = None) -> bool:
     if o.error or o.temperature_c is None:
         return False
     if o.kind == "nowcast":
         return True
     if o.distance_km is not None and o.distance_km > NEAR_KM:
+        # Explicit station lock (or ICAO/IATA pin) may serve as primary
+        # up to FAR_KM; beyond that it stays a peer, never ground truth.
+        if pin is not None and o.distance_km <= FAR_KM and _is_explicit_station(o, pin):
+            return True
         return False
     return True
 
 
-def primary_candidates(obs: list[Observation]) -> list[Observation]:
-    return [o for o in obs if _usable(o)]
+def _is_explicit_station(o: Observation, pin: Pin) -> bool:
+    if pin.locked_station and o.station:
+        return o.station.id.upper() == pin.locked_station.strip().upper()
+    return pin.resolver in {"icao", "iata"}
+
+
+def primary_candidates(
+    obs: list[Observation], pin: Pin | None = None,
+) -> list[Observation]:
+    return [o for o in obs if _usable(o, pin)]
 
 
 def _is_precip_code(code: str | None) -> bool:
@@ -139,8 +153,7 @@ async def fetch_snapshot(
                 warnings.append(f"{p.id}: {val}")
                 continue
             if val is None:
-                if p.fetch is None:
-                    warnings.append(f"{p.id}: adapter not implemented")
+                # Missing adapter or missing key = skip silently (happy path).
                 continue
             if p.produces == "alerts":
                 if isinstance(val, list):
@@ -182,6 +195,16 @@ async def fetch_snapshot(
         for row in obs:
             if row.source_id == "airnow" and row.distance_km is not None and row.distance_km > NEAR_KM:
                 warnings.append(f"Nearest AirNow monitor is {row.distance_km:.1f} km from your pin.")
+            elif row.source_id in {"nws", "buoy"} and row.distance_km is not None and row.distance_km > NEAR_KM:
+                label = "NWS station" if row.source_id == "nws" else f"Buoy {row.station.id if row.station else ''}".strip()
+                if row.distance_km > FAR_KM and pin.resolver not in {"icao", "iata"}:
+                    warnings.append(
+                        f"Nearest {label} is {row.distance_km:.0f} km away — not using it as ground truth."
+                    )
+                elif pin.resolver not in {"icao", "iata"}:
+                    warnings.append(
+                        f"Nearest {label} is {row.distance_km:.1f} km from your pin."
+                    )
         if not any(o.kind == "observation" and (o.distance_km is None or o.distance_km <= NEAR_KM) for o in obs):
             if any(o.kind == "nowcast" for o in obs):
                 warnings.append("No station within 40 km. Showing model nowcast.")
@@ -199,7 +222,7 @@ async def fetch_snapshot(
             # last chance: NWS/OM should have set it
             pass
 
-        primary = pick_primary(obs, cfg.primary)
+        primary = pick_primary(obs, cfg.primary, pin)
         spreads = compute_spreads(obs)
 
         sun_alt = sun_az = None
@@ -285,7 +308,7 @@ async def fetch_mosaic(
 def adaptive_refresh(snap: Snapshot, base: int) -> int:
     o = snap.primary()
     if o and ((o.precip_rate_mmh or 0) > 0 or (o.precip_mm or 0) > 0 or _is_precip_code(o.wx_code)):
-        return min(60, base)
+        return 60
     if snap.alerts:
         sev = {a.severity.lower() for a in snap.alerts}
         if {"severe", "extreme"} & sev:

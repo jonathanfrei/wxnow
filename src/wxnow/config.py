@@ -37,7 +37,7 @@ class Config:
     line_format: str = "plain"  # plain | waybar | tmux | polybar
     notify_gust_kt: float | None = 40.0
     notify_aqi: float | None = 150.0
-    notify_alert_severity: str = "severe"
+    notify_alert_severity: str | None = "severe"
     notify_lightning: bool = False
     contact: str = "wxnow@localhost"
     user_agent: str = DEFAULT_UA
@@ -120,10 +120,21 @@ def _apply(cfg: Config, data: dict[str, Any]) -> None:
         cfg.notify_gust_kt = _threshold(ntf["gust_kt"], "notify.gust_kt")
     if "aqi" in ntf:
         cfg.notify_aqi = _threshold(ntf["aqi"], "notify.aqi")
-    if ntf.get("alert_severity"):
-        cfg.notify_alert_severity = str(ntf["alert_severity"]).lower()
+    if "alert_severity" in ntf:
+        cfg.notify_alert_severity = _severity(ntf["alert_severity"], "notify.alert_severity")
     if "lightning" in ntf:
         cfg.notify_lightning = bool(ntf["lightning"])
+
+
+def _severity(value: Any, name: str) -> str | None:
+    if value is False or value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a severity or false")
+    text = str(value).strip().lower()
+    if text in {"", "none", "off", "false", "disabled"}:
+        return None
+    return text
 
 
 def _threshold(value: Any, name: str) -> float | None:
@@ -176,7 +187,7 @@ show_raw = {"true" if cfg.show_raw else "false"}
 [notify]
 gust_kt = {cfg.notify_gust_kt if cfg.notify_gust_kt is not None else "false"}
 aqi = {cfg.notify_aqi if cfg.notify_aqi is not None else "false"}
-alert_severity = {toml_str(cfg.notify_alert_severity)}
+alert_severity = {toml_str(cfg.notify_alert_severity) if cfg.notify_alert_severity is not None else "false"}
 lightning = {"true" if cfg.notify_lightning else "false"}
 """
     p.write_text(text)

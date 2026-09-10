@@ -24,6 +24,11 @@ def snapshot_change_key(snap: Snapshot) -> str:
         payload["radar"] = {k: v for k, v in radar.items() if k != "age_secs"}
     for observation in payload["observations"]:
         observation.pop("fetched_at", None)
+        # Volatile history/payload windows grow every fetch even when the
+        # current observation is unchanged — exclude from the watch key.
+        observation.pop("raw_payload", None)
+        observation.pop("temp_history", None)
+        observation.pop("pressure_history", None)
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 

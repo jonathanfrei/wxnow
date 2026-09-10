@@ -29,7 +29,7 @@ def hazards_from_rows(rows: list[dict], pin: Pin, *, gairmet: bool = False) -> l
         coords = row.get("coords") or []
         ring = [[float(p["lon"]), float(p["lat"])] for p in coords if p.get("lat") is not None and p.get("lon") is not None]
         contains = point_in_geojson(pin.lat, pin.lon, {"type": "Polygon", "coordinates": [ring]}) if len(ring) >= 3 else None
-        if contains is not True:
+        if contains is False:
             continue
         kind = "G-AIRMET" if gairmet else str(row.get("airSigmetType") or "SIGMET")
         hazard = str(row.get("hazard") or "aviation hazard")
@@ -42,7 +42,8 @@ def hazards_from_rows(rows: list[dict], pin: Pin, *, gairmet: bool = False) -> l
             id=ident, event=f"{kind} {hazard}", headline=f"{kind} {hazard} in effect at this pin",
             severity=str(row.get("severity") or "unknown"), urgency="immediate",
             description=str(row.get("rawAirSigmet") or row.get("due_to") or hazard),
-            onset=onset, ends=ends, source="awc", contains_pin=True,
+            onset=onset, ends=ends, source="awc",
+            contains_pin=True if contains is True else None,
         ))
     return hazards
 
