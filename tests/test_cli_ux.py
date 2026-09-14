@@ -1,12 +1,14 @@
 import asyncio
 from datetime import datetime, timezone
+import time
 
 import pytest
 from rich.console import Console
 
 from wxnow.cli import _prompt_nws_contact, main, parse_args
 from wxnow.config import Config
-from wxnow.geo import resolve
+from wxnow.geo import resolve, _sanitize_query, _validate_coords, _validate_icao, _validate_iata, _validate_zip
+from wxnow.cache import DiskCache
 from wxnow.models import Observation, Pin, Snapshot
 from wxnow.render.card import _card
 
@@ -128,3 +130,61 @@ def test_machine_output_never_prompts_for_contact(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("unexpected prompt"))
     _prompt_nws_contact(args, cfg, want_tui=False)
     assert cfg.contact == "wxnow@localhost"
+
+
+def test_sanitize_query_strips_control_chars():
+    assert _sanitize_query("KTUL\x00\x1f") == "KTUL"
+    assert _sanitize_query("New York\x00") == "New York"
+    assert _sanitize_query("") == ""
+    assert _sanitize_query("A" * 250) == "A" * 200  # MAX_QUERY_LENGTH
+
+
+def test_validate_coords():
+    assert _validate_coords(36.2, -95.9) is True
+    assert _validate_coords(90, 180) is True
+    assert _validate_coords(-90, -180) is True
+    assert _validate_coords(91, 0) is False
+    assert _validate_coords(0, 181) is False
+
+
+def test_validate_codes():
+    assert _validate_icao("KTUL") is True
+    assert _validate_icao("tul") is False
+    assert _validate_icao("KTUL1") is False
+    assert _validate_iata("TUL") is True
+    assert _validate_iata("TU") is False
+    assert _validate_iata("TUL1") is False
+    assert _validate_zip("74101") is True
+    assert _validate_zip("74101-1234") is True
+    assert _validate_zip("1234") is False
+
+
+def test_cache_prune_removes_old_entries(tmp_path):
+    cache = DiskCache(root=tmp_path)
+    now = time.time()
+    # Add fresh entry
+    cache.put("https://api.example.com/fresh", {"data": "fresh"}, text="fresh")
+    # Add stale entry (older than 7 days)
+    old_entry = cache.put("https://api.example.com/old", {"data": "old"}, text="old")
+    # Manually set fetched_at to 8 days ago
+    import json
+    p = cache._path("https://api.example.com/old")
+    data = json.loads(p.read_text())
+    data["fetched_at"] = now - 8 * 86400
+    p.write_text(json.dumps(data))
+    # Prune should remove the old entry
+    removed = cache.prune(max_age_seconds=7 * 86400)
+    assert removed >= 1
+    # Fresh entry should still exist
+    assert cache.get("https://api.example.com/fresh", 86400) is not None
+    # Old entry should be gone
+    assert cache.get("https://api.example.com/old", 86400) is None
+
+
+def test_geo_rejects_invalid_place_names():
+    # Test that classify returns "invalid" for names with dangerous characters
+    from wxnow.geo import classify
+    assert classify("<script>alert(1)</script>") == "invalid"
+    # Null bytes are stripped by sanitize, so they become valid but truncated
+    assert classify("New York\x00") == "place"  # sanitized to "New York"
+    assert classify("A" * 150) == "invalid"  # MAX_PLACE_NAME_LENGTH

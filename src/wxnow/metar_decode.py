@@ -68,13 +68,89 @@ def _num_temp(tok: str) -> float | None:
     if not tok or tok == "//":
         return None
     neg = tok.startswith("M")
-    v = float(tok[1:] if neg else tok)
+    v_str = tok[1:] if neg else tok
+    try:
+        v = float(v_str)
+    except ValueError:
+        return None
+    # Sanity check: reasonable temperature range
+    if v < -100 or v > 60:
+        return None
     return -v if neg else v
 
 
 def _tgroup(blob: str) -> float:
+    if len(blob) != 4 or blob[0] not in "01":
+        return 0.0
     sign = -1 if blob[0] == "1" else 1
-    return sign * int(blob[1:]) / 10.0
+    try:
+        return sign * int(blob[1:]) / 10.0
+    except ValueError:
+        return 0.0
+
+
+def _parse_wind_group(d: str, spd: str, gst: str | None, unit: str) -> tuple[bool, int | None, float | None, float | None]:
+    """Parse wind group, return (vrb, dir, speed_kt, gust_kt)."""
+    if d == "VRB":
+        vrb = True
+        wind_dir = None
+    else:
+        vrb = False
+        try:
+            wind_dir = int(d)
+            if not 0 <= wind_dir <= 360:
+                wind_dir = None
+        except ValueError:
+            wind_dir = None
+    try:
+        spd_f = float(spd)
+        if spd_f < 0 or spd_f > 200:  # reasonable bounds
+            spd_f = 0
+    except ValueError:
+        spd_f = 0
+    gst_f = None
+    if gst:
+        try:
+            gst_f = float(gst)
+            if gst_f < 0 or gst_f > 200:
+                gst_f = None
+        except ValueError:
+            gst_f = None
+    if unit == "MPS":
+        wind_kt = spd_f * 1.94384449244
+        gust_kt = None if gst_f is None else gst_f * 1.94384449244
+    elif unit == "KMH":
+        wind_kt = spd_f / 1.852
+        gust_kt = None if gst_f is None else gst_f / 1.852
+    else:
+        wind_kt = spd_f
+        gust_kt = gst_f
+    return vrb, wind_dir, wind_kt, gust_kt
+
+
+def _parse_visibility_sm(s: str) -> float | None:
+    """Parse visibility in statute miles, return meters."""
+    if not s:
+        return None
+    m_vis_plus = s.startswith("P")
+    s = s.replace("SM", "").replace("P", "")
+    less = s.startswith("M")
+    s = s[1:] if less else s
+    try:
+        if " " in s:  # 1 1/2
+            whole, frac = s.split()
+            n, d = frac.split("/")
+            miles = float(whole) + float(n) / float(d)
+        elif "/" in s:
+            n, d = s.split("/")
+            miles = float(n) / float(d)
+        else:
+            miles = float(s)
+    except (ValueError, ZeroDivisionError):
+        return None
+    if less:
+        miles = max(0.0, miles)
+    return miles * 1609.344
 
 
 def parse_metar(raw: str, now: datetime | None = None) -> Metar:
@@ -112,25 +188,18 @@ def parse_metar(raw: str, now: datetime | None = None) -> Metar:
     wm = RE_WIND.search(body)
     if wm:
         d, spd, _, gst, unit = wm.group(1), wm.group(2), wm.group(3), wm.group(4), wm.group(5)
-        if d == "VRB":
-            m.wind_vrb = True
-        else:
-            m.wind_dir = int(d)
-        spd_f = float(spd)
-        gst_f = float(gst) if gst else None
-        if unit == "MPS":
-            m.wind_kt = spd_f * 1.94384449244
-            m.gust_kt = None if gst_f is None else gst_f * 1.94384449244
-        elif unit == "KMH":
-            m.wind_kt = spd_f / 1.852
-            m.gust_kt = None if gst_f is None else gst_f / 1.852
-        else:
-            m.wind_kt = spd_f
-            m.gust_kt = gst_f
+        vrb, wind_dir, wind_kt, gust_kt = _parse_wind_group(d, spd, gst, unit)
+        m.wind_vrb = vrb
+        m.wind_dir = wind_dir
+        m.wind_kt = wind_kt
+        m.gust_kt = gust_kt
 
     vm = RE_VAR.search(body)
     if vm:
-        m.wind_var = (int(vm.group(1)), int(vm.group(2)))
+        try:
+            m.wind_var = (int(vm.group(1)), int(vm.group(2)))
+        except (ValueError, IndexError):
+            pass
 
     if RE_CAVOK.search(body):
         m.cavok = True
@@ -141,29 +210,16 @@ def parse_metar(raw: str, now: datetime | None = None) -> Metar:
     # visibility SM
     vis_sm = re.search(r"\bP?M?\d{1,2}(?:\s+\d/\d)?(?:/\d)?SM\b|\b\d/\dSM\b", body)
     if vis_sm:
-        s = vis_sm.group(0)
-        m.vis_plus = s.startswith("P")
-        s = s.replace("SM", "").replace("P", "")
-        less = s.startswith("M")
-        s = s[1:] if less else s
-        if " " in s:  # 1 1/2
-            whole, frac = s.split()
-            n, d = frac.split("/")
-            miles = float(whole) + float(n) / float(d)
-        elif "/" in s:
-            n, d = s.split("/")
-            miles = float(n) / float(d)
-        else:
-            miles = float(s)
-        m.vis_m = miles * 1609.344
-        if less:
-            m.vis_m = max(0.0, m.vis_m)
+        m.vis_m = _parse_visibility_sm(vis_sm.group(0))
     elif not m.cavok:
         # 9999 / 4-digit meters after wind, before clouds. Avoid matching time.
         for tok in tokens:
             if re.fullmatch(r"\d{4}", tok) and tok not in {"".join(f"{x:02d}" for x in (m.time_dhm or ()))}:
                 # skip if it is the ddhhmm without Z (already consumed)
-                val = int(tok)
+                try:
+                    val = int(tok)
+                except ValueError:
+                    continue
                 if val == 9999:
                     m.vis_m = 10000.0
                     m.vis_plus = True
@@ -199,15 +255,25 @@ def parse_metar(raw: str, now: datetime | None = None) -> Metar:
         a, b = tm_td.split("/")
         m.temp_c = _num_temp(a)
         m.dew_c = _num_temp(b)
+        # Validate dewpoint <= temperature
+        if m.temp_c is not None and m.dew_c is not None and m.dew_c > m.temp_c:
+            m.dew_c = m.temp_c
 
     am = RE_ALTIM_A.search(body)
     if am:
-        m.altim_inhg = int(am.group(1)) / 100.0
+        try:
+            m.altim_inhg = int(am.group(1)) / 100.0
+        except ValueError:
+            pass
     qm = RE_ALTIM_Q.search(body)
     if qm:
-        q = int(qm.group(1))
-        m.altim_inhg = q / 33.8638866667  # store as inHg; slp set as hPa
-        m.slp_hpa = float(q)
+        try:
+            q = int(qm.group(1))
+            if 800 <= q <= 1100:  # reasonable hPa range
+                m.altim_inhg = q / 33.8638866667  # store as inHg; slp set as hPa
+                m.slp_hpa = float(q)
+        except ValueError:
+            pass
 
     # remarks
     r = m.remarks
@@ -219,22 +285,37 @@ def parse_metar(raw: str, now: datetime | None = None) -> Metar:
         m.flags.append("maintenance $")
     slp = RE_SLP.search(r)
     if slp:
-        n = int(slp.group(1))
-        # SLP is tens/units/tenths; 138 → 1013.8, 950 → 995.0
-        m.slp_hpa = (1000 + n / 10.0) if n < 500 else (900 + n / 10.0)
+        try:
+            n = int(slp.group(1))
+            if 0 <= n <= 999:
+                # SLP is tens/units/tenths; 138 → 1013.8, 950 → 995.0
+                m.slp_hpa = (1000 + n / 10.0) if n < 500 else (900 + n / 10.0)
+                if not (850 <= m.slp_hpa <= 1100):
+                    m.slp_hpa = None
+        except ValueError:
+            pass
     tg = RE_TGROUP.search(r)
     if tg:
-        m.temp_c = _tgroup(tg.group(1))
-        m.dew_c = _tgroup(tg.group(2))
+        try:
+            m.temp_c = _tgroup(tg.group(1))
+            m.dew_c = _tgroup(tg.group(2))
+        except (ValueError, IndexError):
+            pass
     p5 = RE_5APP.search(r)
     if p5:
-        m.pres_code = int(p5.group(1))
-        m.pres_change_hpa = int(p5.group(2)) / 10.0
-        if m.pres_code >= 5:
-            m.pres_change_hpa = -m.pres_change_hpa
+        try:
+            m.pres_code = int(p5.group(1))
+            m.pres_change_hpa = int(p5.group(2)) / 10.0
+            if m.pres_code >= 5:
+                m.pres_change_hpa = -m.pres_change_hpa
+        except ValueError:
+            pass
     ph = RE_PHOUR.search(r)
     if ph:
-        m.precip_1h_in = int(ph.group(1)) / 100.0
+        try:
+            m.precip_1h_in = int(ph.group(1)) / 100.0
+        except ValueError:
+            pass
 
     if not m.wx_text:
         m.wx_text = "none"

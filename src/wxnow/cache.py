@@ -130,3 +130,51 @@ class DiskCache:
         tmp_m.write_text(json.dumps({"url": url, "fetched_at": time.time()}, default=str))
         tmp_b.replace(bp)
         tmp_m.replace(mp)
+
+    def prune(self, max_age_seconds: float = 7 * 86400, max_entries: int = 500) -> int:
+        """Remove stale cache entries. Returns number of files removed."""
+        removed = 0
+        now = time.time()
+        for p in self.root.glob("*.json"):
+            try:
+                data = json.loads(p.read_text())
+                fetched = float(data.get("fetched_at", 0))
+                if (now - fetched) > max_age_seconds:
+                    p.unlink(missing_ok=True)
+                    removed += 1
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                try:
+                    p.unlink(missing_ok=True)
+                    removed += 1
+                except OSError:
+                    pass
+        for p in self.root.glob("*.bin"):
+            try:
+                mp = self._meta_path(p.stem)
+                if not mp.exists():
+                    p.unlink(missing_ok=True)
+                    removed += 1
+            except OSError:
+                pass
+        # Enforce max_entries by removing oldest
+        all_entries = []
+        for p in self.root.glob("*.json"):
+            try:
+                data = json.loads(p.read_text())
+                fetched = float(data.get("fetched_at", 0))
+                all_entries.append((fetched, p))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                pass
+        all_entries.sort(key=lambda x: x[0])
+        while len(all_entries) > max_entries:
+            _, p = all_entries.pop(0)
+            try:
+                p.unlink(missing_ok=True)
+                bp = self._bytes_path(p.stem)
+                bp.unlink(missing_ok=True)
+                mp = self._meta_path(p.stem)
+                mp.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                pass
+        return removed

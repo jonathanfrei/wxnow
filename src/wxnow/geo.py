@@ -14,6 +14,41 @@ RE_ICAO = re.compile(r"^[A-Za-z]{4}$")
 RE_IATA = re.compile(r"^[A-Za-z]{3}$")
 RE_ZIP = re.compile(r"^\d{5}(?:-\d{4})?$")
 
+# Input validation limits
+MAX_QUERY_LENGTH = 200
+MAX_PLACE_NAME_LENGTH = 100
+# Allow letters, digits, spaces, common punctuation for place names
+SAFE_PLACE_CHARS = re.compile(r"^[A-Za-z0-9\s,.'\-()]+$")
+
+
+def _sanitize_query(query: str) -> str:
+    """Sanitize user input to prevent injection attacks."""
+    if not query:
+        return ""
+    # Strip control characters and limit length
+    sanitized = "".join(ch for ch in query if ord(ch) >= 32 or ch in "\t\n\r")
+    return sanitized[:MAX_QUERY_LENGTH].strip()
+
+
+def _validate_coords(lat: float, lon: float) -> bool:
+    """Validate coordinate bounds."""
+    return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
+
+
+def _validate_icao(code: str) -> bool:
+    """Validate ICAO code format."""
+    return bool(RE_ICAO.match(code))
+
+
+def _validate_iata(code: str) -> bool:
+    """Validate IATA code format."""
+    return bool(RE_IATA.match(code))
+
+
+def _validate_zip(code: str) -> bool:
+    """Validate ZIP code format."""
+    return bool(RE_ZIP.match(code))
+
 
 @dataclass
 class PlaceHit:
@@ -26,7 +61,7 @@ class PlaceHit:
 
 
 def classify(query: str) -> str:
-    q = query.strip()
+    q = _sanitize_query(query)
     if not q:
         return "empty"
     if RE_COORDS.match(q):
@@ -37,6 +72,11 @@ def classify(query: str) -> str:
         return "icao"
     if RE_IATA.match(q):
         return "iata"
+    # Additional validation for place names
+    if len(q) > MAX_PLACE_NAME_LENGTH:
+        return "invalid"
+    if not SAFE_PLACE_CHARS.match(q):
+        return "invalid"
     return "place"
 
 
@@ -151,16 +191,25 @@ def pin_from_airport(row: dict, query: str) -> Pin:
 
 
 async def search_places(query: str, http: Http) -> list[PlaceHit]:
-    q = query.strip()
+    q = _sanitize_query(query)
     if not q:
         return []
     kind = classify(q)
+    if kind == "invalid":
+        return []
     hits: list[PlaceHit] = []
     if kind == "coords":
-        lat, lon = parse_coords(q)  # type: ignore[misc]
+        coords = parse_coords(q)
+        if coords is None or not _validate_coords(coords[0], coords[1]):
+            return []
+        lat, lon = coords
         hits.append(PlaceHit(name=f"{lat:.4f}, {lon:.4f}", lat=lat, lon=lon, kind="coords"))
         return hits
     if kind in {"icao", "iata"}:
+        if kind == "icao" and not _validate_icao(q):
+            return []
+        if kind == "iata" and not _validate_iata(q):
+            return []
         row = await lookup_airport(q, http)
         if row and row.get("lat") is not None:
             pin = pin_from_airport(row, q)
@@ -172,13 +221,15 @@ async def search_places(query: str, http: Http) -> list[PlaceHit]:
                 return hits
         if kind == "iata":
             # US heuristic: try K + code
-            row = await lookup_airport("K" + q.upper(), http)
-            if row and row.get("lat") is not None:
-                pin = pin_from_airport(row, "K" + q.upper())
-                hits.append(PlaceHit(
-                    name=pin.name, lat=pin.lat, lon=pin.lon, kind="icao",
-                    extra=row.get("icaoId"), id=row.get("icaoId"),
-                ))
+            k_code = "K" + q.upper()
+            if _validate_icao(k_code):
+                row = await lookup_airport(k_code, http)
+                if row and row.get("lat") is not None:
+                    pin = pin_from_airport(row, k_code)
+                    hits.append(PlaceHit(
+                        name=pin.name, lat=pin.lat, lon=pin.lon, kind="icao",
+                        extra=row.get("icaoId"), id=row.get("icaoId"),
+                    ))
     hits.extend(await nominatim_search(q, http))
     # de-dupe by rounded coords
     seen: set[tuple[float, float]] = set()
@@ -208,25 +259,37 @@ async def resolve(query: str | None, http: Http) -> Pin:
         if pin:
             return pin
         raise RuntimeError("No location. Pass a place, ICAO, or lat,lon.")
-    kind = classify(query)
+    q = _sanitize_query(query)
+    if not q:
+        raise RuntimeError("Empty location query")
+    kind = classify(q)
+    if kind == "invalid":
+        raise RuntimeError(f"Invalid location query: {query!r}")
     if kind == "coords":
-        lat, lon = parse_coords(query)  # type: ignore[misc]
+        coords = parse_coords(q)
+        if coords is None or not _validate_coords(coords[0], coords[1]):
+            raise RuntimeError(f"Invalid coordinates: {q!r}")
+        lat, lon = coords
         return Pin(query=query, name=f"{lat:.3f}, {lon:.3f}", lat=lat, lon=lon, resolver="coords")
     if kind == "icao":
-        row = await lookup_airport(query, http)
+        if not _validate_icao(q):
+            raise RuntimeError(f"Invalid ICAO code: {query!r}")
+        row = await lookup_airport(q, http)
         if row and row.get("lat") is not None:
-            return pin_from_airport(row, query)
-        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for ICAO {query.upper()!r}")
+            return pin_from_airport(row, q)
+        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for ICAO {q.upper()!r}")
     if kind == "iata":
-        row = await lookup_airport(query, http) or await lookup_airport("K" + query.upper(), http)
+        if not _validate_iata(q):
+            raise RuntimeError(f"Invalid IATA code: {query!r}")
+        row = await lookup_airport(q, http) or await lookup_airport("K" + q.upper(), http)
         if row and row.get("lat") is not None:
-            return pin_from_airport(row, query)
-        hits = await nominatim_search(query, http, limit=1)
+            return pin_from_airport(row, q)
+        hits = await nominatim_search(q, http, limit=1)
         if hits:
             h = hits[0]
             return Pin(query=query, name=h.name, lat=h.lat, lon=h.lon, resolver="nominatim")
-        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for IATA {query.upper()!r}")
-    hits = await nominatim_search(query, http, limit=1)
+        raise RuntimeError(f"Could not resolve location {query!r} — no airport found for IATA {q.upper()!r}")
+    hits = await nominatim_search(q, http, limit=1)
     if hits:
         h = hits[0]
         return Pin(query=query, name=h.name, lat=h.lat, lon=h.lon, resolver="nominatim")

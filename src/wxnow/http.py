@@ -37,6 +37,7 @@ class Http:
         self.offline = offline
         self.timeout = timeout
         self._client: httpx.AsyncClient | None = None
+        self._request_count = 0
 
     async def _client_get(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -91,13 +92,14 @@ class Http:
             client = await self._client_get()
             r = await client.get(url, headers=hdrs)
         except Exception as exc:
+            err_msg = f"{type(exc).__name__} fetching {url}: {exc}"
             if cached is not None:
                 return HttpResult(
                     url=url, body=cached.body, text=cached.text or "", from_cache=True,
-                    stale=True, error=str(exc),
+                    stale=True, error=err_msg,
                     cache_fetched_at=datetime.fromtimestamp(cached.fetched_at, timezone.utc),
                 )
-            return HttpResult(url=url, body=None, text="", from_cache=False, stale=True, error=str(exc))
+            return HttpResult(url=url, body=None, text="", from_cache=False, stale=True, error=err_msg)
 
         if r.status_code == 304 and cached is not None:
             refreshed = self.cache.put(url, cached.body, etag=cached.etag, text=cached.text)
@@ -109,7 +111,7 @@ class Http:
 
         if r.status_code >= 400:
             retry_after = r.headers.get("Retry-After")
-            err = f"HTTP {r.status_code}"
+            err = f"HTTP {r.status_code} from {url}"
             if retry_after:
                 err += f" (Retry-After: {retry_after})"
             if r.status_code == 429 and retry_after:
@@ -129,6 +131,9 @@ class Http:
             body = text
         etag = r.headers.get("ETag")
         self.cache.put(url, body, etag=etag, text=text)
+        self._request_count += 1
+        if self._request_count % 50 == 0:
+            self.cache.prune()
         return HttpResult(url=url, body=body, text=text, from_cache=False, stale=False, status=r.status_code)
 
     async def get_bytes(self, url: str, *, accept: str = "application/octet-stream", ttl: float = 60) -> bytes | None:

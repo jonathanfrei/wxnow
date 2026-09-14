@@ -146,7 +146,7 @@ async def _once(args: argparse.Namespace, cfg: Config):
 async def _watch(args: argparse.Namespace, cfg: Config) -> None:
     last = None
     first = True
-    snap = None  # type: ignore[assignment]
+    snap: Snapshot | None = None
     while True:
         try:
             from wxnow.render.card import render_card, render_oneline

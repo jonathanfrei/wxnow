@@ -63,14 +63,18 @@ def load_config(path: Path | None = None) -> Config:
         data = tomllib.loads(p.read_text())
         _apply(cfg, data)
     # env overrides
-    if os.environ.get("WXNOW_UNITS") in {"metric", "imperial", "aviation"}:
-        cfg.units = os.environ["WXNOW_UNITS"]  # type: ignore[assignment]
-    if os.environ.get("WXNOW_THEME"):
-        cfg.theme = os.environ["WXNOW_THEME"]
-    if os.environ.get("WXNOW_PRIMARY"):
-        cfg.primary = os.environ["WXNOW_PRIMARY"]
-    if os.environ.get("WXNOW_CONTACT"):
-        cfg.contact = os.environ["WXNOW_CONTACT"]
+    units_env = os.environ.get("WXNOW_UNITS")
+    if units_env in {"metric", "imperial", "aviation"}:
+        cfg.units = units_env
+    theme_env = os.environ.get("WXNOW_THEME")
+    if theme_env:
+        cfg.theme = theme_env
+    primary_env = os.environ.get("WXNOW_PRIMARY")
+    if primary_env:
+        cfg.primary = primary_env
+    contact_env = os.environ.get("WXNOW_CONTACT")
+    if contact_env:
+        cfg.contact = contact_env
     for key in ("openweather", "visualcrossing", "weatherapi", "tomorrow", "accuweather", "pirate", "airnow", "lightning"):
         env = os.environ.get(f"WXNOW_{key.upper()}_KEY") or os.environ.get(f"{key.upper()}_API_KEY")
         if env:

@@ -127,7 +127,10 @@ async def fetch_snapshot(
     warnings: list[str] = []
     try:
         if pin is None:
-            pin = await resolve(query, http)
+            try:
+                pin = await resolve(query, http)
+            except RuntimeError as exc:
+                raise RuntimeError(f"Location resolution failed: {exc}") from exc
 
         plugins = enabled_plugins(cfg)
         tasks: dict[str, asyncio.Task] = {
@@ -150,7 +153,8 @@ async def fetch_snapshot(
         for p in plugins:
             val = results.get(p.id)
             if isinstance(val, Exception):
-                warnings.append(f"{p.id}: {val}")
+                # Include exception type for easier debugging
+                warnings.append(f"{p.id}: {type(val).__name__}: {val}")
                 continue
             if val is None:
                 # Missing adapter or missing key = skip silently (happy path).
