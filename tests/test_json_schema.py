@@ -24,15 +24,12 @@ from wxnow.models import (
 )
 from wxnow.render.json_out import render_json, snapshot_dict
 
-# The subset AGENTS.md names explicitly.
-DOCUMENTED_KEYS = {
+# AGENTS.md section 5 names this exact set. It is a public contract.
+SNAPSHOT_KEYS = {
     "pin", "fetched_at", "primary", "fill", "preset", "sources_ok",
-    "sources_total", "warnings", "sun", "alerts", "radar", "tide",
-    "spreads", "observations",
+    "sources_total", "warnings", "sun", "alerts", "radar", "lightning",
+    "hazards", "tide", "spreads", "observations",
 }
-
-# The full set, including the v3 additions (lightning, hazards).
-TOP_LEVEL_KEYS = DOCUMENTED_KEYS | {"lightning", "hazards"}
 
 PIN_KEYS = {
     "query", "name", "lat", "lon", "elevation_m", "timezone",
@@ -129,8 +126,7 @@ def _full_snapshot() -> Snapshot:
 
 def test_top_level_keys_are_exactly_the_contract():
     keys = set(snapshot_dict(_minimal_snapshot()))
-    assert DOCUMENTED_KEYS <= keys, "AGENTS.md-documented keys went missing"
-    assert keys == TOP_LEVEL_KEYS, "snapshot schema changed; update DOCUMENTED_KEYS and AGENTS.md"
+    assert keys == SNAPSHOT_KEYS, "snapshot schema changed; update SNAPSHOT_KEYS and AGENTS.md together"
 
 
 def test_pin_keys_are_stable():
