@@ -93,7 +93,9 @@ wxnow/
       compare.py          two-pin diff
       metrics.py          Prometheus / OpenMetrics
   tests/                  no-network: METAR decode, derived, units, geo, spreads,
-                          CLI UX, pins, source integrity, runtime reliability
+                          CLI UX, pins, source integrity, runtime reliability,
+                          NWS adapter, notify thresholds, explain glosses,
+                          HTTP cache, snapshot JSON schema, dark-card contrast
 ```
 
 Canonical units in `Observation`: °C, m/s, hPa, m, mm, %. Display converts in `format.py` / `units.py`.
@@ -218,7 +220,7 @@ TUI (default on a tty) · `--card` · `--one-line` (`--format plain|waybar|tmux|
 
 `--watch` uses `cli.snapshot_change_key` (JSON minus `fetched_at`, sun, radar age, per-obs `fetched_at`; radar dict is copied before stripping `age_secs`) and reuses `engine.adaptive_refresh` (min 60 s, 60 s when precipitating — METAR precip tokens `RA/SN/DZ/SG/IC/PL/GR/GS/UP` — or severe/extreme alerts). On change it also runs `notify.evaluate` / `notify.emit` (`notify-send` if present) with per-pin state and `--` separator before title/body. Thresholds: `notify.gust_kt`, `notify.aqi`, `notify.alert_severity`. `false` disables a threshold and must survive `save_config`.
 
-JSON snapshot keys: `pin`, `fetched_at`, `primary`, `fill`, `preset`, `sources_ok`, `sources_total`, `warnings`, `sun`, `alerts`, `radar`, `tide`, `spreads`, `observations[]`.
+JSON snapshot keys: `pin`, `fetched_at`, `primary`, `fill`, `preset`, `sources_ok`, `sources_total`, `warnings`, `sun`, `alerts`, `radar`, `lightning`, `hazards`, `tide`, `spreads`, `observations[]`. `tests/test_json_schema.py` asserts this exact set, so changing a key means editing the contract and the test together.
 
 ---
 
@@ -226,7 +228,7 @@ JSON snapshot keys: `pin`, `fetched_at`, `primary`, `fill`, `preset`, `sources_o
 
 - Python 3.11+, stdlib `tomllib` / `zoneinfo`, type hints, dataclasses. No pydantic required.
 - Async I/O via `httpx.AsyncClient` (`connect=5 s`, `read=timeout`). Fan-out with `asyncio.gather(..., return_exceptions=True)`.
-- User-Agent on every HTTP call. Cache TTLs (approx): METAR ~60s, NWS obs ~90s, NWS alerts ~60s, Open-Meteo current ~180s, AQ ~300s, RainViewer ~60s, tides observations ~180s, NDBC ~180s, Nominatim ~7d, airport ~1d. Stale cache may still be served, flagged. `DiskCache` writes atomically (tmp→replace), uses full 64-hex sha256, and never persists URLs containing `API_KEY`/`client_secret`/`client_id`; `Http.get_bytes` (radar tiles) is cached with `DiskCache.put_bytes`/`fresh_bytes`.
+- User-Agent on every HTTP call. Cache TTLs (approx): METAR ~60s, NWS obs ~90s, NWS alerts ~60s, Open-Meteo current ~180s, AQ ~300s, RainViewer ~60s, tides observations ~180s, NDBC ~180s, Nominatim ~7d, airport ~1d. Stale cache may still be served, flagged. `DiskCache` writes atomically (tmp→replace), uses full 64-hex sha256, and never persists URLs containing `API_KEY`/`client_secret`/`client_id`; `Http.get_bytes` (radar tiles) is cached with `DiskCache.put_bytes`/`fresh_bytes`. A byte blob is a `{hash}.bin` plus a `{hash}.meta.json` sidecar — `prune()` ages a pair out through its sidecar, never counts a `*.meta.json` as an entry, and drops a `.bin` whose sidecar is missing. Do not resolve a sidecar by re-hashing an entry stem.
 - Tests must not need network. Live fetches are manual (`wxnow --json "New York, NY"`).
 - Keep adapters thin: HTTP → `Observation` / `RadarSnapshot` / `TideSnapshot` / `list[Alert]`. Derived meteorology lives in `derived.py`, not in sources.
 - New sources: implement `async def fetch_*(pin, http) -> …`, `register(Plugin(...))` in `load_builtin`, add the id to `DEFAULT_ENABLED` only if it belongs on the happy path. Label `kind` correctly (`observation` vs `nowcast` vs `blended`).
@@ -249,11 +251,13 @@ Imperative, product-language: `Fix dark-card contrast for gauge labels`, not `up
 
 Post-v3 reliability (landed on this tree, issues #7–#21): no silent IP fallback; stale cache + honest `sources_ok`; enabled radar/tides/buoy; watch change detection; distinct alerts; skip AQ-only on source cycle; disabled notify thresholds persist; card fill values; CLI option validation; `--jsonl` as a stream; `--metar` fails closed; cheatsheet includes mosaic/presets/pins.
 
+Later reliability fixes: `DiskCache.prune()` no longer evicts live byte-cache entries (#70); no `[dim]` markup anywhere in the TUI, enforced by a static scan.
+
 Still later: keyed Pirate/WeatherAPI adapters, PWS/HA, AirNow, lightning, SIGMET.
 
 Presets reorder the same now-data. They must not add forecast fields.
 
-Known gap: `tests/test_cli_ux.py::test_card_uses_fill_values_and_fits_narrow_width` can fail if the Rich card still overflows 60 columns. Do not close “card adapts to terminal width” until that test is green.
+Card width is guarded: `test_cli_ux.py::test_card_uses_fill_values_and_fits_narrow_width` and `test_console_ux.py::test_narrow_card_fits_sixty_columns` both render the card into a 60-column console and assert no line overflows. Both are green.
 
 ---
 
@@ -261,7 +265,7 @@ Known gap: `tests/test_cli_ux.py::test_card_uses_fill_values_and_fits_narrow_wid
 
 Before you stop:
 
-1. `pytest -q` still green (no network). If the narrow-card test is the only failure, say so; do not hide it.
+1. `pytest -q` still green (no network). If anything is red, name it; do not hide it.
 2. `wxnow --json KTUL` still returns `primary`, `observations[]`, `spreads`, `alerts`.
 3. Default TUI is dark and readable in a **light-background terminal** (this was a real bug).
 4. No forecast leaked onto the default path.
