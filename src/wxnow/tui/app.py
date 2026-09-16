@@ -243,13 +243,18 @@ class WxNowApp(App):
                 self.query_one(f"#{sid}", Static).update(markup)
             self.query_one("#sky", Static).update(sky_markup(o, units))
             self.query_one("#windprecip", Static).update(wind_precip_markup(o, units))
-        self.query_one("#radar", Static).update(radar_markup(snap))
-        lightning_pane = self.query_one("#lightning", Static)
+        radar_pane = self.query_one("#radar", Pane)
+        radar_pane.update(radar_markup(snap))
+        lightning_pane = self.query_one("#lightning", Pane)
         lightning_on = lightning_visible(snap)
         lightning_pane.display = lightning_on
         if lightning_on:
             lightning_pane.update(lightning_markup(snap, units))
-        self.query_one("#tide", Static).update(tide_markup(snap, units))
+        tide_pane = self.query_one("#tide", Pane)
+        tide_on = tide_visible(snap)
+        tide_pane.display = tide_on
+        if tide_on:
+            tide_pane.update(tide_markup(snap, units))
         hazards = self.query_one("#hazards", Static)
         hazards.update(hazards_markup(snap))
         hazards.display = bool(snap.hazards)
@@ -379,10 +384,16 @@ class WxNowApp(App):
         self.push_screen(MosaicScreen(snaps, self.units), _cb)  # type: ignore[arg-type]
 
     def action_radar_loop(self) -> None:
-        if self.snap and self.snap.radar and self.snap.radar.frames:
-            self.push_screen(RadarScreen(self.snap, reduced_motion=self.reduced_motion))
-        else:
+        if not self.snap or not self.snap.radar:
+            self.notify("no radar data available")
+            return
+        if not self.snap.radar.frames:
             self.notify("no radar frames available")
+            return
+        try:
+            self.push_screen(RadarScreen(self.snap, reduced_motion=self.reduced_motion))
+        except Exception as exc:
+            self.notify(f"failed to open radar: {exc}", severity="error")
 
     def action_pin(self) -> None:
         q = self.query or (self.snap.pin.query if self.snap else None)
@@ -576,6 +587,11 @@ class WxNowApp(App):
                 self._paint(self.snap)
             except Exception:
                 pass
+
+
+def tide_visible(snap: Snapshot) -> bool:
+    """Hide the tide pane when there is no tide station."""
+    return snap.tide is not None
 
 
 def lightning_visible(snap: Snapshot) -> bool:

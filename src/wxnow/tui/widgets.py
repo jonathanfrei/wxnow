@@ -298,10 +298,13 @@ def radar_markup(snap: Snapshot) -> str:
     station = (r.station or st).strip() or "—"
     line = f"{station} · {age}{stale}"
     grid = f"\n[{CYAN}]{r.grid}[/]" if r.grid else ""
+    hint = ""
+    if r.frames:
+        hint = f"\n{muted(f'Shift+R for animated loop ({len(r.frames)} frames)')}"
     return (
         f"{muted('RADAR  snapshot')}\n"
         f"[bold {INK}]{line}[/]\n"
-        f"{muted(r.note)}{grid}"
+        f"{muted(r.note)}{grid}{hint}"
     )
 
 
