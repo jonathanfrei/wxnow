@@ -197,7 +197,10 @@ def _card(snap: Snapshot, units: Units, width: int) -> Panel:
             m = int(snap.radar.age_secs // 60)
             rage = f"{m}m ago" if m else f"{int(snap.radar.age_secs)}s ago"
         rst = (snap.radar.station or snap.pin.radar_station or "radar").strip() or "radar"
-        context_lines.append(Text(f"radar {rst} · {rage}" + ("  STALE" if snap.radar.stale else ""), style=MUTED))
+        radar_text = f"radar {rst} · {rage}" + ("  STALE" if snap.radar.stale else "")
+        if snap.radar.frames:
+            radar_text += f"  (Shift+R for animated loop — {len(snap.radar.frames)} frames)"
+        context_lines.append(Text(radar_text, style=MUTED))
     if snap.tide is not None:
         t = snap.tide
         lvl = f"{t.water_level_m:.2f} m" if t.water_level_m is not None else "—"
