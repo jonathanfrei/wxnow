@@ -131,11 +131,26 @@ class DiskCache:
         tmp_b.replace(bp)
         tmp_m.replace(mp)
 
+    def _bytes_for_stem(self, stem: str) -> Path:
+        """Byte sibling of an entry *hash* (unlike _bytes_path, which takes a URL)."""
+        return self.root / f"{stem}.bin"
+
+    def _meta_for_stem(self, stem: str) -> Path:
+        """Metadata sibling of an entry *hash* (unlike _meta_path, which takes a URL)."""
+        return self.root / f"{stem}.meta.json"
+
+    def _entries(self):
+        """Cached JSON entries, excluding the *.meta.json sidecars of byte blobs."""
+        for p in self.root.glob("*.json"):
+            if p.name.endswith(".meta.json"):
+                continue
+            yield p
+
     def prune(self, max_age_seconds: float = 7 * 86400, max_entries: int = 500) -> int:
         """Remove stale cache entries. Returns number of files removed."""
         removed = 0
         now = time.time()
-        for p in self.root.glob("*.json"):
+        for p in self._entries():
             try:
                 data = json.loads(p.read_text())
                 fetched = float(data.get("fetched_at", 0))
@@ -148,17 +163,28 @@ class DiskCache:
                     removed += 1
                 except OSError:
                     pass
-        for p in self.root.glob("*.bin"):
+        # Byte blobs age out with their sidecar, never on their own.
+        for mp in self.root.glob("*.meta.json"):
+            stem = mp.name[: -len(".meta.json")]
             try:
-                mp = self._meta_path(p.stem)
-                if not mp.exists():
-                    p.unlink(missing_ok=True)
-                    removed += 1
-            except OSError:
-                pass
+                fetched = float(json.loads(mp.read_text()).get("fetched_at", 0))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                mp.unlink(missing_ok=True)
+                self._bytes_for_stem(stem).unlink(missing_ok=True)
+                removed += 1
+                continue
+            if (now - fetched) > max_age_seconds:
+                mp.unlink(missing_ok=True)
+                self._bytes_for_stem(stem).unlink(missing_ok=True)
+                removed += 1
+        # A .bin with no sidecar is a half-finished write; drop it.
+        for p in self.root.glob("*.bin"):
+            if not self._meta_for_stem(p.stem).exists():
+                p.unlink(missing_ok=True)
+                removed += 1
         # Enforce max_entries by removing oldest
         all_entries = []
-        for p in self.root.glob("*.json"):
+        for p in self._entries():
             try:
                 data = json.loads(p.read_text())
                 fetched = float(data.get("fetched_at", 0))
@@ -170,10 +196,8 @@ class DiskCache:
             _, p = all_entries.pop(0)
             try:
                 p.unlink(missing_ok=True)
-                bp = self._bytes_path(p.stem)
-                bp.unlink(missing_ok=True)
-                mp = self._meta_path(p.stem)
-                mp.unlink(missing_ok=True)
+                self._bytes_for_stem(p.stem).unlink(missing_ok=True)
+                self._meta_for_stem(p.stem).unlink(missing_ok=True)
                 removed += 1
             except OSError:
                 pass
