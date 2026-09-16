@@ -21,14 +21,14 @@ DEFAULT_ENABLED = [
 
 @dataclass
 class Config:
-    units: Units = "metric"
+    units: Units = "imperial"
     refresh_secs: int = 120
     reduced_motion: bool = False
     theme: str = "auto"  # auto | night | day | high-contrast | colorblind | mono
     hero: str = "gauges"
     show_raw: bool = True
     default_location: str | None = None
-    favorites: list[str] = field(default_factory=list)
+    favorites: list[str] = field(default_factory=lambda: ["Miami, FL", "KTUL", "KBOS", "KJFK", "KSFO"])
     primary: str = "metar"
     enabled: list[str] = field(default_factory=lambda: list(DEFAULT_ENABLED))
     keys: dict[str, str] = field(default_factory=dict)

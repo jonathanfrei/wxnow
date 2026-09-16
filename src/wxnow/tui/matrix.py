@@ -277,6 +277,7 @@ def help_markup() -> str:
         f"{k('x')}  choose official station\n"
         f"{k('p')}  pin current                  {k('o')}  organize pins (reorder / delete)\n"
         f"{k('w')}  watch mosaic                 {k('shift+p')}  cycle preset\n"
+        f"{k('shift+r')}  animated radar loop\n"
         f"{k('↑↓')}  move panes / scroll          {k('1–9')}  saved places\n"
         f"{k('enter')}  source matrix            {k('m')}  raw METAR / payload\n"
         f"{k('a')}  alerts full text             {k('e')}  explain this number\n"
