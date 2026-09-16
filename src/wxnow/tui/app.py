@@ -19,6 +19,7 @@ from wxnow.models import Snapshot
 from wxnow.tui.matrix import AlertScreen, ChoiceScreen, ExplainScreen, HelpScreen, MatrixScreen, SearchScreen
 from wxnow.tui.pins import PinsScreen
 from wxnow.tui.mosaic import MosaicScreen
+from wxnow.tui.radar import RadarScreen
 from wxnow.tui.widgets import (
     PRESETS, alerts_markup, conflict_markup, hazards_markup, header_line, hero_markup,
     lightning_markup,
@@ -68,6 +69,7 @@ class WxNowApp(App):
         Binding("x", "stations", "stations"),
         Binding("u", "cycle_units", "units"),
         Binding("shift+p", "cycle_preset", "preset", show=False),
+        Binding("shift+r", "radar_loop", "radar loop", show=False),
         Binding("r", "refresh", "refresh"),
         Binding("p", "pin", "pin"),
         Binding("o", "organize_pins", "pins"),
@@ -375,6 +377,12 @@ class WxNowApp(App):
                 self.run_worker(self._goto(q), exclusive=True)
 
         self.push_screen(MosaicScreen(snaps, self.units), _cb)  # type: ignore[arg-type]
+
+    def action_radar_loop(self) -> None:
+        if self.snap and self.snap.radar and self.snap.radar.frames:
+            self.push_screen(RadarScreen(self.snap, reduced_motion=self.reduced_motion))
+        else:
+            self.notify("no radar frames available")
 
     def action_pin(self) -> None:
         q = self.query or (self.snap.pin.query if self.snap else None)

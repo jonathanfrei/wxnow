@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import struct
 import zlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from wxnow.http import Http
-from wxnow.models import Pin, RadarSnapshot
+from wxnow.models import Pin, RadarFrame, RadarSnapshot
+
+
+# Number of historical frames to fetch for animation (fixed at 12 per user request)
+RADAR_FRAME_COUNT = 12
+# Zoom level for radar tiles (7 = ~256px tile, good balance of detail/performance)
+RADAR_ZOOM = 7
 
 
 def _png_pixels(data: bytes) -> tuple[int, int, list[tuple[int, int, int, int]]] | None:
@@ -110,6 +118,26 @@ def _tile_xy(lat: float, lon: float, zoom: int) -> tuple[int, int]:
     return x, y
 
 
+async def _fetch_frame(
+    pin: Pin,
+    http: Http,
+    host: str,
+    path: str,
+    ts: int,
+    x: int,
+    y: int,
+    now: datetime,
+) -> RadarFrame | None:
+    """Fetch a single radar frame tile and convert to grid."""
+    tile = await http.get_bytes(f"{host}{path}/256/{RADAR_ZOOM}/{x}/{y}/2/1_1.png", accept="image/png")
+    if not tile:
+        return None
+    grid = reflectivity_grid(tile)
+    frame_at = datetime.fromtimestamp(ts, tz=timezone.utc)
+    age = (now - frame_at).total_seconds()
+    return RadarFrame(frame_at=frame_at, age_secs=age, grid=grid)
+
+
 async def fetch_radar(pin: Pin, http: Http) -> RadarSnapshot | None:
     now = datetime.now(timezone.utc)
     r = await http.get_json("https://api.rainviewer.com/public/weather-maps.json", ttl=60)
@@ -120,25 +148,49 @@ async def fetch_radar(pin: Pin, http: Http) -> RadarSnapshot | None:
     past = ((r.body.get("radar") or {}).get("past") or [])
     if not past:
         return None
-    last = past[-1]
-    ts = last.get("time")
-    frame_at = datetime.fromtimestamp(int(ts), tz=timezone.utc) if ts else None
-    age = (now - frame_at).total_seconds() if frame_at else None
-    grid = None
-    path = last.get("path")
+
     host = r.body.get("host")
-    if path and host:
-        zoom = 7
-        x, y = _tile_xy(pin.lat, pin.lon, zoom)
-        tile = await http.get_bytes(f"{host}{path}/256/{zoom}/{x}/{y}/2/1_1.png", accept="image/png")
-        if tile:
-            grid = reflectivity_grid(tile)
+    if not host:
+        return None
+
+    # Take the most recent RADAR_FRAME_COUNT frames (or all available if fewer)
+    frames_to_fetch = past[-RADAR_FRAME_COUNT:]
+
+    # Calculate tile coordinates once
+    x, y = _tile_xy(pin.lat, pin.lon, RADAR_ZOOM)
+
+    # Fetch all frames in parallel
+    tasks = [
+        _fetch_frame(pin, http, host, frame.get("path", ""), frame.get("time", 0), x, y, now)
+        for frame in frames_to_fetch
+        if frame.get("path") and frame.get("time")
+    ]
+
+    frames: list[RadarFrame] = []
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, RadarFrame):
+                frames.append(result)
+
+    # Sort by frame_at (oldest first for animation)
+    frames.sort(key=lambda f: f.frame_at)
+
+    if not frames:
+        return None
+
+    # Latest frame is the "current" one
+    latest = frames[-1]
+    age = latest.age_secs
+    stale = bool(r.stale or (age is not None and age > 15 * 60))
+
     return RadarSnapshot(
         source="rainviewer",
-        frame_at=frame_at,
+        frame_at=latest.frame_at,
         age_secs=age,
         station=pin.radar_station,
-        note="current frame only — not a loop of what's coming",
-        stale=bool(r.stale or (age is not None and age > 15 * 60)),
-        grid=grid,
+        note="historical frames — not a forecast loop",
+        stale=stale,
+        grid=latest.grid,
+        frames=frames,
     )

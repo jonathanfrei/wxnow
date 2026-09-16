@@ -140,6 +140,13 @@ class Observation:
 
 
 @dataclass
+class RadarFrame:
+    frame_at: datetime
+    age_secs: float
+    grid: str | None = None  # braille/ASCII representation
+
+
+@dataclass
 class RadarSnapshot:
     source: str
     frame_at: datetime | None
@@ -147,7 +154,8 @@ class RadarSnapshot:
     station: str | None = None
     note: str = "current frame only — not a loop"
     stale: bool = False
-    grid: str | None = None  # braille/ASCII current frame
+    grid: str | None = None  # braille/ASCII current frame (latest)
+    frames: list[RadarFrame] = field(default_factory=list)  # historical frames for animation
 
 
 @dataclass
