@@ -12,6 +12,7 @@ from textual.widgets import Footer, Static
 
 from wxnow.format import age_clock, clock
 from wxnow.models import RadarFrame, Snapshot
+from wxnow.tui.widgets import muted
 
 
 class RadarScreen(ModalScreen):
@@ -123,7 +124,7 @@ class RadarScreen(ModalScreen):
         # Frame display
         frame_time = frame.frame_at.strftime("%H:%M:%S UTC") if frame.frame_at else "—"
         age = age_clock(frame.frame_at, datetime.now(timezone.utc), "observation", stale=False)
-        grid = frame.grid or "[dim]no data[/]"
+        grid = frame.grid or muted("no data")
 
         # Add play/pause indicator
         play_indicator = "[bold #5fdc82]▶ PLAYING[/]" if self.playing else "[bold #f0c35a]⏸ PAUSED[/]"
